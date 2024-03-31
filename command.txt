@@ -1,0 +1,1 @@
+dotnet new bepinex5plugin -n NAME -T netstandard2.1 -U 2021.3.21
