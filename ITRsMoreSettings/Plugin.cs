@@ -1,9 +1,7 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
 using System.Reflection;
 using BepInEx;
 using BepInEx.Configuration;
-using BepInEx.Logging;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
@@ -84,6 +82,8 @@ public class Plugin : BaseUnityPlugin
             pauseMenuCanvas = GameObject.Find("PauseMenuCanvas");
         }
 
+        yield return null;
+
         var pauseMenu = pauseMenuCanvas.transform.Find("PauseMenu");
         if (pauseMenu == null)
         {
@@ -98,17 +98,19 @@ public class Plugin : BaseUnityPlugin
             yield break;
         }
 
-        panel.offsetMax = panel.offsetMax with { y = 700 };
-        panel.offsetMin = panel.offsetMin with { y = -700 };
+        panel.offsetMax = panel.offsetMax with { y = 750 };
+        panel.offsetMin = panel.offsetMin with { y = -750 };
 
         var moveUp = new[]
         {
             "GraphicsQuality",
             "Resolution",
             "FullscreenMode",
+            "RefreshRate",
             "AudioVolume",
             "MouseSensitivity",
-            "Invert Grab",
+            "ControllerSensitivity",
+            "InvertMouse",
         };
         Transform child = null;
         for (var i = 0; i < moveUp.Length; i++)
@@ -123,7 +125,7 @@ public class Plugin : BaseUnityPlugin
 
             var childPosition = child.localPosition;
             childPosition.y += 80;
-            if (i < 3)
+            if (i < 4)
             {
                 childPosition.y += 50;
             }
@@ -133,11 +135,11 @@ public class Plugin : BaseUnityPlugin
 
         if (child == null)
         {
-            Logger.LogDebug("Not creating toggles due to not finding template");
+            Logger.LogDebug("Not creating toggles due to not InvertMouse");
             yield break;
         }
-
-        CreateToggle(pauseMenu, child, 1, InvertClick);
+        
+        CreateToggle(pauseMenu, child, 3, InvertClick);
 
         /*var settingsManager = FindObjectOfType<SettingsManager>(true);
         var invertControls = PlayerPrefs.GetInt("InvertControls") == 1;
@@ -146,7 +148,7 @@ public class Plugin : BaseUnityPlugin
 
         CreateToggle(pauseMenu, child, -3 - 1 / 7f, UseVsync);
 
-        CreateToggle(pauseMenu, child, 2, UseCheatScript);
+        CreateToggle(pauseMenu, child, 4, UseCheatScript);
         var playerBody = GameObject.Find("Climber_Hero_Body_Prefab");
         var cheatScript = playerBody.GetComponent<CheatScript>();
         cheatScript.enabled = UseCheatScript.Value;
@@ -168,6 +170,12 @@ public class Plugin : BaseUnityPlugin
         toggle.SetIsOnWithoutNotify(entry.Value);
         entry.SettingChanged += (_, __) => toggle.SetIsOnWithoutNotify(entry.Value);
         toggle.onValueChanged.AddListener(newValue => entry.Value = newValue);
+        
+        Destroy(copy.GetChild(6).gameObject);
+        Destroy(copy.GetChild(5).gameObject);
+        Destroy(copy.GetChild(3).gameObject);
+        Destroy(copy.GetChild(2).gameObject);
+        Destroy(copy.GetChild(1).gameObject);
     }
 
     private void CreateToggle(

@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 
-namespace SpeedrunGhost;
+namespace SpeedrunningTools;
 
 public struct QuickSaveData
 {

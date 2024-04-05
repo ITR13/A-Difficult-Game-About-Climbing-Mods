@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 
-namespace SpeedrunGhost;
+namespace SpeedrunningTools;
 
 public class Recorder
 {

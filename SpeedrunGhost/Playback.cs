@@ -1,7 +1,7 @@
 ﻿using System;
 using UnityEngine;
 
-namespace SpeedrunGhost;
+namespace SpeedrunningTools;
 
 public class Playback
 {

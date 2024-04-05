@@ -3,23 +3,31 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using BepInEx;
 using BepInEx.Configuration;
-using Tomlet;
+using HarmonyLib;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-namespace SpeedrunGhost;
+namespace SpeedrunningTools;
 
-[BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
+[BepInPlugin(
+    "com.itr.adifficultgameaboutclimbing.speedrunningtools",
+    "Speedrunning Tools",
+    MyPluginInfo.PLUGIN_VERSION
+)]
 public class Plugin : BaseUnityPlugin
 {
     private const float Interval = 0.05f;
 
     private ConfigEntry<bool> EnableTeleport, EnableFly, EnableQuickSave;
+    private ConfigEntry<bool> SaveRestarts, SaveWins;
     private ConfigEntry<KeyCode> QuickSave, QuickLoad;
     private ConfigEntry<KeyCode>[] Fly;
     private ConfigEntry<KeyboardShortcut>[] Teleport;
+
+    private ConfigEntry<bool> AutoReplay;
 
     private float _recordingTimer;
     private float _nextKeyframe;
@@ -34,9 +42,14 @@ public class Plugin : BaseUnityPlugin
 
     private QuickSaveData _quickSaveData;
 
+
+    private string _replaysFolder;
+    private string _activeReplaysFolder;
+
     private void Awake()
     {
-        SceneManager.sceneUnloaded += _ => { StopRecording(true); };
+        Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly());
+
         EnableTeleport = Config.Bind(
             "_Toggles",
             "Enable Teleport",
@@ -45,14 +58,14 @@ public class Plugin : BaseUnityPlugin
         );
 
         EnableFly = Config.Bind(
-            "Toggles",
+            "_Toggles",
             "Enable Fly",
-            false,
+            true,
             "Allow player to fly with IJKL"
         );
 
         EnableQuickSave = Config.Bind(
-            "Toggles",
+            "_Toggles",
             "Enable EnableQuickSave",
             true,
             "Allow player to load and save any position"
@@ -70,7 +83,21 @@ public class Plugin : BaseUnityPlugin
             KeyCode.F,
             "Loads the previously quicksaved position"
         );
+        
+        SaveWins = Config.Bind(
+            "_Toggles",
+            "Save Victories",
+            true,
+            "If true, the replay of your run is saved when you reach the finish line"
+        );
 
+        SaveRestarts = Config.Bind(
+            "_Toggles",
+            "Save Restarts",
+            false,
+            "If true, the replay of your run is saved when you press ctrl+R"
+        );
+        
         Fly = new ConfigEntry<KeyCode>[4];
         var flyDirs = new[] { "Up", "Left", "Down", "Right" };
         var flyKeys = new[] { KeyCode.I, KeyCode.J, KeyCode.K, KeyCode.L };
@@ -95,7 +122,59 @@ public class Plugin : BaseUnityPlugin
             );
         }
 
-        // StartCoroutine(Initialize());
+        AutoReplay = Config.Bind(
+            "_Toggles",
+            "Replay immediately",
+            false,
+            "Plays all replays from the current session immediately. Mostly used for testing the mod."
+        );
+
+        _replaysFolder = Path.Combine(Application.dataPath, "..", "Replays");
+        Directory.CreateDirectory(_replaysFolder);
+
+        _activeReplaysFolder = Path.Combine(Application.dataPath, "..", "ActiveReplays");
+        Directory.CreateDirectory(_activeReplaysFolder);
+
+        LoadActiveReplays();
+
+        EndTeleporterPatch.OnGameEnded += () =>
+        {
+            StopRecording(SaveWins.Value);
+            _initalized = false;
+            StartCoroutine(Initialize());
+        };
+        SceneManager.sceneUnloaded += _ => StopRecording(SaveRestarts.Value);
+    }
+
+
+    private void LoadActiveReplays()
+    {
+        foreach (var path in Directory.EnumerateFiles(_activeReplaysFolder, "*.bin"))
+        {
+            try
+            {
+                using var binaryReader = new BinaryReader(File.OpenRead(path));
+                var keyframeData = Serialization.Deserialize(binaryReader);
+                if (keyframeData.Version != MyPluginInfo.PLUGIN_VERSION)
+                {
+                    Logger.LogWarning(
+                        $"Warning! Replay was created with version {
+                            keyframeData.Version
+                        }, but current version is {
+                            MyPluginInfo.PLUGIN_VERSION
+                        }! You might experience some issues"
+                    );
+                }
+
+                _recordings.Add(keyframeData.Keyframes.ToList());
+                Logger.LogInfo($"Loaded replay {path}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+                Logger.LogError($"Encountered exception when reading file '{path}'\n{e.Message}");
+            }
+        }
     }
 
     private IEnumerator Start()
@@ -106,6 +185,7 @@ public class Plugin : BaseUnityPlugin
         }
 
         SceneManager.sceneLoaded += (_, _) => { StartCoroutine(Initialize()); };
+        yield return Initialize();
     }
 
     private IEnumerator Initialize()
@@ -180,6 +260,7 @@ public class Plugin : BaseUnityPlugin
             FindObjectOfType<PlayerSpawn>().Respawn(endPoints[i]);
             StopRecording(false);
             StartCoroutine(Initialize());
+            _hovering = 1.5f;
             return;
         }
     }
@@ -200,7 +281,7 @@ public class Plugin : BaseUnityPlugin
         for (var i = 0; i < 4; i++)
         {
             if (!Input.GetKey(Fly[i].Value)) continue;
-            _hovering = 3f;
+            _hovering = 1.5f;
             sumForces += forces[i];
         }
 
@@ -303,8 +384,8 @@ public class Plugin : BaseUnityPlugin
         }
         catch
         {
-            _recordings.Add(_recorder.Keyframes);
-            _recorder = null;
+            // Something went wrong, so we're saving no matter what
+            StopRecording(true);
             throw;
         }
     }
@@ -333,37 +414,46 @@ public class Plugin : BaseUnityPlugin
         _quickSaveData.Valid = false;
         var recorder = _recorder;
         _recorder = null;
-        if (save && recorder != null)
+        if (recorder == null) return;
+
+        if (AutoReplay.Value)
         {
-            Logger.LogInfo("Saving recording");
             _recordings.Add(recorder.Keyframes);
-            var serialized = TomletMain.TomlStringFrom(
-                new KeyframeData
-                {
-                    Paths = _recorderPaths,
-                    Keyframes = recorder.Keyframes.ToArray(),
-                }
-            );
-            var folder = Path.Combine(Application.dataPath, "..", "Replays");
-            Directory.CreateDirectory(folder);
-            var datetime = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-            File.WriteAllText(
-                Path.Combine(folder, datetime + ".json"),
-                serialized
-            );
         }
+
+        if (!save) return;
+
+        Logger.LogInfo("Saving recording");
+        var datetime = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+        var path = Path.Combine(_replaysFolder, datetime + ".bin");
+
+        using var binaryWriter = new BinaryWriter(File.OpenWrite(path));
+        Serialization.Serialize(
+            binaryWriter,
+            new KeyframeData
+            {
+                Version = MyPluginInfo.PLUGIN_VERSION,
+                Paths = _recorderPaths,
+                Keyframes = recorder.Keyframes.ToArray(),
+            }
+        );
     }
 
-    private void IterateDown(Transform transform, List<Transform> list, List<String> names, string parentName = null)
+    private void IterateDown(
+        Transform currentTransform,
+        List<Transform> list,
+        List<string> names,
+        string parentName = null
+    )
     {
-        if (transform.GetComponent<ParticleSystem>()) return;
-        var name = (string.IsNullOrEmpty(parentName) ? "" : parentName + "\n") + transform.gameObject.name;
+        if (currentTransform.GetComponent<ParticleSystem>()) return;
+        var objectName = (string.IsNullOrEmpty(parentName) ? "" : parentName + "\n") + currentTransform.gameObject.name;
 
-        list.Add(transform);
-        names.Add(name);
-        foreach (Transform child in transform)
+        list.Add(currentTransform);
+        names.Add(objectName);
+        foreach (Transform child in currentTransform)
         {
-            IterateDown(child, list, names, name);
+            IterateDown(child, list, names, objectName);
         }
     }
 

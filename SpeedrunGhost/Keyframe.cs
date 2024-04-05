@@ -1,9 +1,12 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 
-namespace SpeedrunGhost;
+namespace SpeedrunningTools;
 
+[Serializable]
 public struct KeyframeData
 {
+    public string Version;
     public string[] Paths;
     public Keyframe[] Keyframes;
 }
@@ -18,12 +21,14 @@ public struct Keyframe
     public bool SyncFrame;
 }
 
+[Serializable]
 public struct PositionKeyframe
 {
     public byte Index;
     public Vector3 Position;
 }
 
+[Serializable]
 public struct RotationKeyframe
 {
     public byte Index;
