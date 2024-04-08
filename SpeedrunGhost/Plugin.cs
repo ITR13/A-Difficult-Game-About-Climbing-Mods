@@ -375,9 +375,12 @@ public class Plugin : BaseUnityPlugin
             rb.angularVelocity = _quickSaveData.AngularVelocites[i];
         }
 
-        _recordingTimer = _quickSaveData.Time;
-        _recorder.PurgeAfter(_recordingTimer);
-        _nextKeyframe = _recorder.Keyframes[^1].Time + Interval;
+        if (_recorder != null)
+        {
+            _recordingTimer = _quickSaveData.Time;
+            _recorder.PurgeAfter(_recordingTimer);
+            _nextKeyframe = _recorder.Keyframes[^1].Time + Interval;
+        }
 
         foreach (var playback in _playbacks)
         {
