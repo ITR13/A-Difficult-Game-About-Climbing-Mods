@@ -57,7 +57,9 @@ public class Playback
 
         foreach (var positionKeyframe in toFrame.Positions)
         {
-            Transforms[positionKeyframe.Index].localPosition = Vector3.Lerp(
+            var transform = Transforms[positionKeyframe.Index];
+            if (transform == null) continue;
+            transform.localPosition = Vector3.Lerp(
                 Positions[positionKeyframe.Index],
                 positionKeyframe.Position,
                 lerpTime
@@ -66,7 +68,9 @@ public class Playback
 
         foreach (var rotationKeyframe in toFrame.Rotations)
         {
-            Transforms[rotationKeyframe.Index].localRotation = Quaternion.Lerp(
+            var transform = Transforms[rotationKeyframe.Index];
+            if (transform == null) continue;
+            transform.localRotation = Quaternion.Lerp(
                 Rotations[rotationKeyframe.Index],
                 rotationKeyframe.Rotation,
                 lerpTime
@@ -86,14 +90,19 @@ public class Playback
         var keyframe = Keyframes[CurrIndex];
         foreach (var positionKeyframe in keyframe.Positions)
         {
+            var transform = Transforms[positionKeyframe.Index];
+            if (transform == null) continue;
+            
             Positions[positionKeyframe.Index] = positionKeyframe.Position;
-            Transforms[positionKeyframe.Index].localPosition = positionKeyframe.Position;
+            transform.localPosition = positionKeyframe.Position;
         }
 
         foreach (var rotationKeyframe in keyframe.Rotations)
         {
+            var transform = Transforms[rotationKeyframe.Index];
+            if (transform == null) continue;
             Rotations[rotationKeyframe.Index] = rotationKeyframe.Rotation;
-            Transforms[rotationKeyframe.Index].localRotation = rotationKeyframe.Rotation;
+            transform.localRotation = rotationKeyframe.Rotation;
         }
     }
 

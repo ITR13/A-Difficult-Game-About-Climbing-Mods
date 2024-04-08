@@ -33,7 +33,7 @@ public class Plugin : BaseUnityPlugin
     private float _nextKeyframe;
     private Recorder _recorder;
     private string[] _recorderPaths;
-    private List<List<Keyframe>> _recordings = new();
+    private List<KeyframeData> _recordings = new();
     private List<Playback> _playbacks = new();
 
     private bool _initalized = false;
@@ -82,7 +82,7 @@ public class Plugin : BaseUnityPlugin
             if (_recorder == null) StopRecording(true);
             if (EnableRecording.Value) StartRecording();
         };
-        
+
         QuickSave = Config.Bind(
             "Keybinds",
             "QuickSave",
@@ -95,7 +95,7 @@ public class Plugin : BaseUnityPlugin
             KeyCode.F,
             "Loads the previously quicksaved position"
         );
-        
+
         SaveWins = Config.Bind(
             "_Toggles",
             "Save Victories",
@@ -109,7 +109,7 @@ public class Plugin : BaseUnityPlugin
             false,
             "If true, the replay of your run is saved when you press ctrl+R"
         );
-        
+
         Fly = new ConfigEntry<KeyCode>[4];
         var flyDirs = new[] { "Up", "Left", "Down", "Right" };
         var flyKeys = new[] { KeyCode.I, KeyCode.J, KeyCode.K, KeyCode.L };
@@ -128,9 +128,9 @@ public class Plugin : BaseUnityPlugin
         {
             Teleport[i] = Config.Bind(
                 "Keybinds",
-                $"Teleport #{i+1}",
+                $"Teleport #{i + 1}",
                 new KeyboardShortcut(KeyCode.Alpha1 + i),
-                $"Teleports to section #{i+1}, whatever that might be"
+                $"Teleports to section #{i + 1}, whatever that might be"
             );
         }
 
@@ -178,7 +178,7 @@ public class Plugin : BaseUnityPlugin
                     );
                 }
 
-                _recordings.Add(keyframeData.Keyframes.ToList());
+                _recordings.Add(keyframeData);
                 Logger.LogInfo($"Loaded replay {path}");
             }
             catch (Exception e)
@@ -408,7 +408,7 @@ public class Plugin : BaseUnityPlugin
         {
             return;
         }
-        
+
         _recordingTimer = 0f;
         _nextKeyframe = Interval;
 
@@ -433,10 +433,17 @@ public class Plugin : BaseUnityPlugin
         _recorder = null;
         if (recorder == null) return;
 
+        var keyFrameData = new KeyframeData
+        {
+            Version = MyPluginInfo.PLUGIN_VERSION,
+            Paths = _recorderPaths,
+            Keyframes = recorder.Keyframes.ToArray(),
+        };
+
         if (AutoReplay.Value)
         {
             Logger.LogError($"{AutoReplay.Value} {EnableRecording.Value}");
-            _recordings.Add(recorder.Keyframes);
+            _recordings.Add(keyFrameData);
         }
 
         if (!save) return;
@@ -448,12 +455,7 @@ public class Plugin : BaseUnityPlugin
         using var binaryWriter = new BinaryWriter(File.OpenWrite(path));
         Serialization.Serialize(
             binaryWriter,
-            new KeyframeData
-            {
-                Version = MyPluginInfo.PLUGIN_VERSION,
-                Paths = _recorderPaths,
-                Keyframes = recorder.Keyframes.ToArray(),
-            }
+            keyFrameData
         );
     }
 
@@ -476,7 +478,7 @@ public class Plugin : BaseUnityPlugin
     }
 
 
-    private void CreatePlayback(List<Keyframe> keyframes)
+    private void CreatePlayback(KeyframeData data)
     {
         var prefab = GameObject.Find("HeroCharacter");
         Logger.LogDebug("Creating clone");
@@ -505,20 +507,50 @@ public class Plugin : BaseUnityPlugin
             }
         }
 
+
         var root = instance.transform;
         Logger.LogDebug("Finding armature");
         var armature = root.Find("Armature");
         var children = new List<Transform>();
+        var names = new List<string>();
         Logger.LogDebug("Gathering children");
-        IterateDown(armature, children, new List<string>());
+        IterateDown(armature, children, names);
+        var reorderdChildren = MatchTransformLists(children, names, data.Paths);
 
         Logger.LogDebug("Creating recorder");
         _playbacks.Add(
             new Playback(
                 root,
-                children.ToArray(),
-                keyframes.ToArray()
+                reorderdChildren,
+                data.Keyframes.ToArray()
             )
         );
+    }
+
+    private Transform[] MatchTransformLists(List<Transform> children, List<string> currentNames, string[] oldNames)
+    {
+        var result = new Transform[oldNames.Length];
+        var prevCurrentIndex = -1;
+        var prevMatchingIndex = -1;
+        for (var currentIndex = 0; currentIndex < currentNames.Count; currentIndex++)
+        {
+            var nextMatching = Array.IndexOf(oldNames, currentNames[currentIndex], prevMatchingIndex + 1);
+            if (nextMatching == -1) continue;
+
+            var unassigned = Mathf.Min(currentIndex - prevCurrentIndex, nextMatching - prevMatchingIndex) - 1;
+            
+            for (var i = 0; i < unassigned; i++)
+            {
+                result[prevMatchingIndex + i + 1] = children[prevCurrentIndex + i + 1];
+            }
+
+            result[nextMatching] = children[currentIndex];
+
+            if (nextMatching == result.Length - 1) break;
+            prevCurrentIndex = currentIndex;
+            prevMatchingIndex = nextMatching;
+        }
+
+        return result;
     }
 }
