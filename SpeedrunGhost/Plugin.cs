@@ -21,7 +21,7 @@ public class Plugin : BaseUnityPlugin
 {
     private const float Interval = 0.05f;
 
-    private ConfigEntry<bool> EnableTeleport, EnableFly, EnableQuickSave;
+    private ConfigEntry<bool> EnableTeleport, EnableFly, EnableQuickSave, EnableRecording;
     private ConfigEntry<bool> SaveRestarts, SaveWins;
     private ConfigEntry<KeyCode> QuickSave, QuickLoad;
     private ConfigEntry<KeyCode>[] Fly;
@@ -66,11 +66,23 @@ public class Plugin : BaseUnityPlugin
 
         EnableQuickSave = Config.Bind(
             "_Toggles",
-            "Enable EnableQuickSave",
+            "Enable QuickSave",
             true,
             "Allow player to load and save any position"
         );
 
+        EnableRecording = Config.Bind(
+            "_Toggles",
+            "Enable Recording",
+            true,
+            "If set to false, the player will no longer be recorded in the background"
+        );
+        EnableRecording.SettingChanged += (sender, args) =>
+        {
+            if (_recorder == null) StopRecording(true);
+            if (EnableRecording.Value) StartRecording();
+        };
+        
         QuickSave = Config.Bind(
             "Keybinds",
             "QuickSave",
@@ -116,9 +128,9 @@ public class Plugin : BaseUnityPlugin
         {
             Teleport[i] = Config.Bind(
                 "Keybinds",
-                $"Teleport #{i}",
+                $"Teleport #{i+1}",
                 new KeyboardShortcut(KeyCode.Alpha1 + i),
-                $"Teleports to section #{i}, whatever that might be"
+                $"Teleports to section #{i+1}, whatever that might be"
             );
         }
 
@@ -392,6 +404,11 @@ public class Plugin : BaseUnityPlugin
 
     private void StartRecording()
     {
+        if (!EnableRecording.Value)
+        {
+            return;
+        }
+        
         _recordingTimer = 0f;
         _nextKeyframe = Interval;
 
@@ -418,6 +435,7 @@ public class Plugin : BaseUnityPlugin
 
         if (AutoReplay.Value)
         {
+            Logger.LogError($"{AutoReplay.Value} {EnableRecording.Value}");
             _recordings.Add(recorder.Keyframes);
         }
 
