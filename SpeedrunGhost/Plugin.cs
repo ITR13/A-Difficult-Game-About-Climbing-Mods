@@ -27,6 +27,8 @@ public class Plugin : BaseUnityPlugin
     private ConfigEntry<KeyCode>[] Fly;
     private ConfigEntry<KeyboardShortcut>[] Teleport;
 
+    private ConfigEntry<float> HoverTime;
+
     private ConfigEntry<bool> AutoReplay;
 
     private float _recordingTimer;
@@ -83,6 +85,13 @@ public class Plugin : BaseUnityPlugin
             if (EnableRecording.Value) StartRecording();
         };
 
+        HoverTime = Config.Bind(
+            "Tweaks",
+            "Hover Time",
+            0.25f,
+            "How long the player will hover in the air after flying"
+        );
+
         QuickSave = Config.Bind(
             "Keybinds",
             "QuickSave",
@@ -110,16 +119,16 @@ public class Plugin : BaseUnityPlugin
             "If true, the replay of your run is saved when you press ctrl+R"
         );
 
-        Fly = new ConfigEntry<KeyCode>[4];
-        var flyDirs = new[] { "Up", "Left", "Down", "Right" };
-        var flyKeys = new[] { KeyCode.I, KeyCode.J, KeyCode.K, KeyCode.L };
-        for (var i = 0; i < 4; i++)
+        Fly = new ConfigEntry<KeyCode>[5];
+        var flyDirs = new[] { "Up", "Left", "Down", "Right", "Still" };
+        var flyKeys = new[] { KeyCode.I, KeyCode.J, KeyCode.K, KeyCode.L, KeyCode.O };
+        for (var i = 0; i < 5; i++)
         {
             Fly[i] = Config.Bind(
                 "Keybinds",
                 $"Fly {flyDirs[i]}",
                 flyKeys[i],
-                ""
+                i != 4 ? $"Fly {flyDirs[i]}" : "Hover still in the air"
             );
         }
 
@@ -286,14 +295,15 @@ public class Plugin : BaseUnityPlugin
             Vector3.left * 10,
             Vector3.down * 10,
             Vector3.right * 10,
+            Vector3.zero,
         };
 
         _hovering -= Time.fixedDeltaTime;
         var sumForces = Vector3.zero;
-        for (var i = 0; i < 4; i++)
+        for (var i = 0; i < 5; i++)
         {
             if (!Input.GetKey(Fly[i].Value)) continue;
-            _hovering = 1.5f;
+            _hovering = HoverTime.Value;
             sumForces += forces[i];
         }
 
@@ -538,7 +548,7 @@ public class Plugin : BaseUnityPlugin
             if (nextMatching == -1) continue;
 
             var unassigned = Mathf.Min(currentIndex - prevCurrentIndex, nextMatching - prevMatchingIndex) - 1;
-            
+
             for (var i = 0; i < unassigned; i++)
             {
                 result[prevMatchingIndex + i + 1] = children[prevCurrentIndex + i + 1];
