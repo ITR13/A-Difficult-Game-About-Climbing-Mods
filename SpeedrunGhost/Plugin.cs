@@ -224,6 +224,7 @@ public class Plugin : BaseUnityPlugin
 
     private void Update()
     {
+        if (PauseMenu.GameIsPaused) return;
         if (!_initalized) return;
 
         RecordingStuff();
@@ -233,6 +234,7 @@ public class Plugin : BaseUnityPlugin
 
     private void FixedUpdate()
     {
+        if (PauseMenu.GameIsPaused) return;
         if (!_initalized) return;
         FlyStuff();
     }
