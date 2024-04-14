@@ -517,6 +517,9 @@ public class Plugin : BaseUnityPlugin
                 data.Keyframes.ToArray()
             )
         );
+        var material = LoadGhostMaterial();
+        var meshRenderer = root.Find("Body").GetComponent<SkinnedMeshRenderer>();
+        meshRenderer.sharedMaterials = new[] { material, material };
     }
 
     private Transform[] MatchTransformLists(List<Transform> children, List<string> currentNames, string[] oldNames)
@@ -544,5 +547,32 @@ public class Plugin : BaseUnityPlugin
         }
 
         return result;
+    }
+
+    private Material LoadGhostMaterial()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var resourceName = "SpeedrunningTools.ghost";
+        Logger.LogInfo(resourceName);
+        using var stream = assembly.GetManifestResourceStream(resourceName);
+        if (stream == null)
+        {
+            Debug.LogError("(stream) Failed to load ghost material AssetBundle!");
+            return null;
+        }
+
+        var buffer = new byte[stream.Length];
+        stream.Read(buffer, 0, buffer.Length);
+        var assetBundle = AssetBundle.LoadFromMemory(buffer);
+        if (assetBundle == null)
+        {
+            Debug.LogError("(bundle) Failed to load ghost material AssetBundle!");
+            return null;
+        }
+
+        var matName = "assets/customshaders/ghost/ghost material.mat";
+        var ghostMaterial = assetBundle.LoadAsset<Material>(matName);
+        assetBundle.Unload(false);
+        return ghostMaterial;
     }
 }

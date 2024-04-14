@@ -39,6 +39,11 @@
     </Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <None Remove="ghost.unitypackage" />
+    <EmbeddedResource Include="ghost" />
+  </ItemGroup>
+
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <Exec Command="xcopy /y &quot;$(TargetPath)&quot; &quot;G:\SteamLibrary\steamapps\common\A Difficult Game About Climbing\BepInEx\plugins&quot;&#xA;" />
   </Target>
