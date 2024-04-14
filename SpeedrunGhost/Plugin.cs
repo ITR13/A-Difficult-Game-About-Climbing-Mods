@@ -162,9 +162,9 @@ public class Plugin : BaseUnityPlugin
         {
             StopRecording(SaveWins.Value);
             _initalized = false;
-            StartCoroutine(Initialize());
         };
         SceneManager.sceneUnloaded += _ => StopRecording(SaveRestarts.Value);
+        ClimberMainPatch.OnClimberSpawned += Initialize;
     }
 
 
@@ -198,33 +198,10 @@ public class Plugin : BaseUnityPlugin
         }
     }
 
-    private IEnumerator Start()
-    {
-        for (var i = 0; i < 20; i++)
-        {
-            yield return null;
-        }
-
-        SceneManager.sceneLoaded += (_, _) => { StartCoroutine(Initialize()); };
-        yield return Initialize();
-    }
-
-    private IEnumerator Initialize()
+    private void Initialize(ClimberMain climberMain)
     {
         _initalized = false;
-        yield return null;
-
-        do
-        {
-            var heroCharacter = GameObject.Find("HeroCharacter");
-            while (heroCharacter == null)
-            {
-                yield return null;
-                heroCharacter = GameObject.Find("HeroCharacter");
-            }
-
-            _playerBody = heroCharacter.transform.parent.parent.GetComponentsInChildren<Rigidbody2D>();
-        } while (_playerBody.Length == 0);
+        _playerBody = climberMain.GetComponentsInChildren<Rigidbody2D>();
 
         StartRecording();
         _initalized = true;
@@ -278,9 +255,9 @@ public class Plugin : BaseUnityPlugin
         for (var i = 0; i < endPoints.Length; i++)
         {
             if (!Teleport[i].Value.IsDown()) continue;
-            FindObjectOfType<PlayerSpawn>().Respawn(endPoints[i]);
+            _initalized = false;
             StopRecording(false);
-            StartCoroutine(Initialize());
+            FindObjectOfType<PlayerSpawn>().Respawn(endPoints[i]);
             _hovering = 1.5f;
             return;
         }
