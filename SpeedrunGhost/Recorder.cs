@@ -26,6 +26,12 @@ public class Recorder
         var rotationsChanged = new List<RotationKeyframe>();
         for (var i = 0; i < Transforms.Length; i++)
         {
+            if (Transforms[i] == null)
+            {
+                Debug.LogError($"Transform #{i}/{Transforms.Length} is null");
+                continue;
+            }
+            
             var position = Transforms[i].localPosition;
             var rotation = Transforms[i].localRotation;
             if (Positions[i] != position || syncFrame)

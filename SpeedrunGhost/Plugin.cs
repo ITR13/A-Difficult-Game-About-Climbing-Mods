@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -44,7 +43,6 @@ public class Plugin : BaseUnityPlugin
 
     private QuickSaveData _quickSaveData;
 
-
     private string _replaysFolder;
     private string _activeReplaysFolder;
 
@@ -82,7 +80,7 @@ public class Plugin : BaseUnityPlugin
         EnableRecording.SettingChanged += (sender, args) =>
         {
             if (_recorder == null) StopRecording(true);
-            if (EnableRecording.Value) StartRecording();
+            if (EnableRecording.Value) StartRecording(FindObjectOfType<ClimberMain>());
         };
 
         HoverTime = Config.Bind(
@@ -160,10 +158,15 @@ public class Plugin : BaseUnityPlugin
 
         EndTeleporterPatch.OnGameEnded += () =>
         {
-            StopRecording(SaveWins.Value);
             _initalized = false;
+            StopRecording(SaveWins.Value);
         };
-        SceneManager.sceneUnloaded += _ => StopRecording(SaveRestarts.Value);
+        SceneManager.sceneUnloaded += _ =>
+        {
+            if (!_initalized) return;
+            _initalized = false;
+            StopRecording(SaveRestarts.Value);
+        };
         ClimberMainPatch.OnClimberSpawned += Initialize;
     }
 
@@ -203,9 +206,8 @@ public class Plugin : BaseUnityPlugin
         _initalized = false;
         _playerBody = climberMain.GetComponentsInChildren<Rigidbody2D>();
 
-        StartRecording();
+        StartRecording(climberMain);
         _initalized = true;
-        Logger.LogInfo("Started Recording");
 
         foreach (var playback in _playbacks)
         {
@@ -218,7 +220,7 @@ public class Plugin : BaseUnityPlugin
         _playbacks.Clear();
         foreach (var rec in _recordings)
         {
-            CreatePlayback(rec);
+            CreatePlayback(climberMain, rec);
         }
     }
 
@@ -394,10 +396,11 @@ public class Plugin : BaseUnityPlugin
         }
     }
 
-    private void StartRecording()
+    private void StartRecording(ClimberMain climberMain)
     {
         if (!EnableRecording.Value)
         {
+            Logger.LogInfo("Not Starting Recording");
             return;
         }
 
@@ -405,7 +408,7 @@ public class Plugin : BaseUnityPlugin
         _nextKeyframe = Interval;
 
         Logger.LogDebug("Finding HeroCharacter");
-        var heroCharacter = GameObject.Find("HeroCharacter").transform;
+        var heroCharacter = climberMain.transform.Find("Climber_Hero_Body_Prefab").Find("HeroCharacter");
         Logger.LogDebug("Finding Armature");
         var armature = heroCharacter.Find("Armature");
         var children = new List<Transform>();
@@ -416,6 +419,8 @@ public class Plugin : BaseUnityPlugin
         Logger.LogDebug("Creating recorder");
         _recorder = new Recorder(heroCharacter, children.ToArray());
         _recorderPaths = names.ToArray();
+
+        Logger.LogInfo("Started Recording");
     }
 
     private void StopRecording(bool save)
@@ -441,8 +446,15 @@ public class Plugin : BaseUnityPlugin
         if (!save) return;
 
         Logger.LogInfo("Saving recording");
+
         var datetime = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
         var path = Path.Combine(_replaysFolder, datetime + ".bin");
+
+        var retries = 0;
+        while (File.Exists(path))
+        {
+            path = Path.Combine(_replaysFolder, $"{datetime}.{++retries}.bin");
+        }
 
         using var binaryWriter = new BinaryWriter(File.OpenWrite(path));
         Serialization.Serialize(
@@ -470,9 +482,9 @@ public class Plugin : BaseUnityPlugin
     }
 
 
-    private void CreatePlayback(KeyframeData data)
+    private void CreatePlayback(ClimberMain climberMain, KeyframeData data)
     {
-        var prefab = GameObject.Find("HeroCharacter");
+        var prefab = climberMain.transform.Find("Climber_Hero_Body_Prefab").Find("HeroCharacter");
         Logger.LogDebug("Creating clone");
         var instance = Instantiate(prefab);
 
@@ -553,11 +565,10 @@ public class Plugin : BaseUnityPlugin
     {
         var assembly = Assembly.GetExecutingAssembly();
         var resourceName = "SpeedrunningTools.ghost";
-        Logger.LogInfo(resourceName);
         using var stream = assembly.GetManifestResourceStream(resourceName);
         if (stream == null)
         {
-            Debug.LogError("(stream) Failed to load ghost material AssetBundle!");
+            Logger.LogError("(stream) Failed to load ghost material AssetBundle!");
             return null;
         }
 
@@ -566,7 +577,7 @@ public class Plugin : BaseUnityPlugin
         var assetBundle = AssetBundle.LoadFromMemory(buffer);
         if (assetBundle == null)
         {
-            Debug.LogError("(bundle) Failed to load ghost material AssetBundle!");
+            Logger.LogError("(bundle) Failed to load ghost material AssetBundle!");
             return null;
         }
 
