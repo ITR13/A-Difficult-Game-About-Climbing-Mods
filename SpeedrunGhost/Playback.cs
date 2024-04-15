@@ -114,6 +114,7 @@ public class Playback
             time -= length;
         }
 
+        var startingTime = Time;
         Time = time;
 
         var target = -1;
@@ -124,13 +125,14 @@ public class Playback
                 CurrIndex = i - 1;
             }
 
-            if (Keyframes[i].Time >= time)
+            if (Keyframes[i].Time > time)
             {
-                target = i;
+                target = i - 1;
                 break;
             }
         }
 
+        var startingIndex = 0;
         for (var i = CurrIndex; i <= target; i++)
         {
             Update(0);
@@ -138,7 +140,7 @@ public class Playback
 
         if (CurrIndex != target)
         {
-            Debug.LogError("!§!!");
+            Debug.LogError($"Failed to properly rewind time when loading:\n{startingTime} #{startingIndex} -> {Time} #{CurrIndex} (target #{target})");
         }
     }
 }
