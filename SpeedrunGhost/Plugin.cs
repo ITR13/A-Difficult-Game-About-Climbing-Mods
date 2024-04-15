@@ -41,7 +41,10 @@ public class Plugin : BaseUnityPlugin
     private readonly List<Playback> _playbacks = new();
 
     private bool _initalized;
-    private Rigidbody2D[] _playerBody;
+    private Rigidbody2D[] _playerBodies;
+    private LegScript[] _playerLegScripts;
+    private Transform[] _playerTransforms;
+
     private float _hovering;
 
     private QuickSaveData _quickSaveData;
@@ -232,7 +235,12 @@ public class Plugin : BaseUnityPlugin
     private void Initialize(ClimberMain climberMain)
     {
         _initalized = false;
-        _playerBody = climberMain.GetComponentsInChildren<Rigidbody2D>();
+        _playerBodies = climberMain.GetComponentsInChildren<Rigidbody2D>();
+        _playerLegScripts = climberMain.GetComponentsInChildren<LegScript>();
+
+        var transforms = new List<Transform>();
+        IterateDown(climberMain.transform, transforms, new List<string>());
+        _playerTransforms = transforms.ToArray();
 
         StartRecording(climberMain);
         _initalized = true;
@@ -318,7 +326,7 @@ public class Plugin : BaseUnityPlugin
 
         if (!(_hovering > 0)) return;
 
-        foreach (var rb in _playerBody)
+        foreach (var rb in _playerBodies)
         {
             rb.velocity = sumForces;
             rb.AddForce(-Physics.gravity * rb.mass);
@@ -343,19 +351,38 @@ public class Plugin : BaseUnityPlugin
     private void DoPhysicsSave()
     {
         Logger.LogInfo("QuickSave!");
-        var positions = new Vector3[_playerBody.Length];
-        var rotations = new float[_playerBody.Length];
-        var velocities = new Vector2[_playerBody.Length];
-        var angularVelocities = new float[_playerBody.Length];
+        var positions = new Vector3[_playerBodies.Length];
+        var rotations = new float[_playerBodies.Length];
+        var velocities = new Vector2[_playerBodies.Length];
+        var angularVelocities = new float[_playerBodies.Length];
 
-        for (var i = 0; i < _playerBody.Length; i++)
+        var legOffsets = new Vector2[_playerLegScripts.Length];
+
+        var transformPositions = new Vector3[_playerTransforms.Length];
+        var transformRotations = new Quaternion[_playerTransforms.Length];
+
+        for (var i = 0; i < _playerTransforms.Length; i++)
         {
-            var rb = _playerBody[i];
-            var t = rb.transform;
-            positions[i] = t.position;
+            var t = _playerTransforms[i];
+            if (t == null) continue;
+            transformPositions[i] = t.position;
+            transformRotations[i] = t.rotation;
+        }
+
+        for (var i = 0; i < _playerBodies.Length; i++)
+        {
+            var rb = _playerBodies[i];
+            if (rb == null) continue;
+            positions[i] = rb.position;
             rotations[i] = rb.rotation;
             velocities[i] = rb.velocity;
             angularVelocities[i] = rb.angularVelocity;
+        }
+
+        for (var i = 0; i < _playerLegScripts.Length; i++)
+        {
+            if (_playerLegScripts[i] == null) continue;
+            legOffsets[i] = Traverse.Create(_playerLegScripts[i]).Field("offset").GetValue<Vector2>();
         }
 
         _quickSaveData = new QuickSaveData
@@ -366,6 +393,10 @@ public class Plugin : BaseUnityPlugin
             Rotations = rotations,
             Velocities = velocities,
             AngularVelocites = angularVelocities,
+            LegOffsets = legOffsets,
+
+            TransformPositions = transformPositions,
+            TransformRotations = transformRotations,
         };
     }
 
@@ -374,14 +405,28 @@ public class Plugin : BaseUnityPlugin
         if (!_quickSaveData.Valid) return;
         Logger.LogInfo("QuickLoad!");
 
-        for (var i = 0; i < _playerBody.Length; i++)
+        for (var i = 0; i < _playerTransforms.Length; i++)
         {
-            var rb = _playerBody[i];
-            var t = rb.transform;
-            t.position = _quickSaveData.Positions[i];
+            var t = _playerTransforms[i];
+            if (t == null) continue;
+            t.position = _quickSaveData.TransformPositions[i];
+            t.rotation = _quickSaveData.TransformRotations[i];
+        }
+
+        for (var i = 0; i < _playerBodies.Length; i++)
+        {
+            var rb = _playerBodies[i];
+            if (rb == null) return;
+            rb.position = _quickSaveData.Positions[i];
             rb.rotation = _quickSaveData.Rotations[i];
             rb.velocity = _quickSaveData.Velocities[i];
             rb.angularVelocity = _quickSaveData.AngularVelocites[i];
+        }
+
+        for (var i = 0; i < _playerLegScripts.Length; i++)
+        {
+            if (_playerLegScripts[i] == null) continue;
+            Traverse.Create(_playerLegScripts[i]).Field("offset").SetValue(_quickSaveData.LegOffsets[i]);
         }
 
         if (_recorder != null)

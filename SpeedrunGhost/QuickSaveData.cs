@@ -11,4 +11,9 @@ public struct QuickSaveData
     public float[] Rotations;
     public Vector2[] Velocities;
     public float[] AngularVelocites;
+
+    public Vector3[] TransformPositions;
+    public Quaternion[] TransformRotations;
+    
+    public Vector2[] LegOffsets;
 }
