@@ -20,24 +20,27 @@ public class Plugin : BaseUnityPlugin
 {
     private const float Interval = 0.05f;
 
-    private ConfigEntry<bool> EnableTeleport, EnableFly, EnableQuickSave, EnableRecording;
-    private ConfigEntry<bool> SaveRestarts, SaveWins;
-    private ConfigEntry<KeyCode> QuickSave, QuickLoad;
-    private ConfigEntry<KeyCode>[] Fly;
-    private ConfigEntry<KeyboardShortcut>[] Teleport;
+    private ConfigEntry<bool> _enableTeleport, _enableFly, _enableQuickSave, _enableRecording;
+    private ConfigEntry<bool> _saveRestarts, _saveWins;
+    private ConfigEntry<KeyCode> _quickSave, _quickLoad;
+    private ConfigEntry<KeyCode>[] _fly;
+    private ConfigEntry<KeyboardShortcut>[] _teleport;
 
-    private ConfigEntry<float> HoverTime;
+    private ConfigEntry<float> _hoverTime;
 
-    private ConfigEntry<bool> AutoReplay;
+    private ConfigEntry<bool> _autoReplay;
+
+    private ConfigEntry<bool> _useNonTransparentGhostTexture;
+    private ConfigEntry<float> _ghostTransparency;
 
     private float _recordingTimer;
     private float _nextKeyframe;
     private Recorder _recorder;
     private string[] _recorderPaths;
-    private List<KeyframeData> _recordings = new();
-    private List<Playback> _playbacks = new();
+    private readonly List<KeyframeData> _recordings = new();
+    private readonly List<Playback> _playbacks = new();
 
-    private bool _initalized = false;
+    private bool _initalized;
     private Rigidbody2D[] _playerBody;
     private float _hovering;
 
@@ -46,83 +49,99 @@ public class Plugin : BaseUnityPlugin
     private string _replaysFolder;
     private string _activeReplaysFolder;
 
+    private Material _ghostMaterial;
+    private static readonly int SmoothAdd = Shader.PropertyToID("_SmoothAdd");
+
     private void Awake()
     {
         Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly());
 
-        EnableTeleport = Config.Bind(
+        _enableTeleport = Config.Bind(
             "_Toggles",
             "Enable Teleport",
             true,
             "Allow player to teleport to key points"
         );
 
-        EnableFly = Config.Bind(
+        _enableFly = Config.Bind(
             "_Toggles",
             "Enable Fly",
             true,
             "Allow player to fly with IJKL"
         );
 
-        EnableQuickSave = Config.Bind(
+        _enableQuickSave = Config.Bind(
             "_Toggles",
             "Enable QuickSave",
             true,
             "Allow player to load and save any position"
         );
 
-        EnableRecording = Config.Bind(
+        _enableRecording = Config.Bind(
             "_Toggles",
             "Enable Recording",
             true,
             "If set to false, the player will no longer be recorded in the background"
         );
-        EnableRecording.SettingChanged += (sender, args) =>
+        _enableRecording.SettingChanged += (_, _) =>
         {
             if (_recorder == null) StopRecording(true);
-            if (EnableRecording.Value) StartRecording(FindObjectOfType<ClimberMain>());
+            if (_enableRecording.Value) StartRecording(FindObjectOfType<ClimberMain>());
         };
 
-        HoverTime = Config.Bind(
+        _hoverTime = Config.Bind(
             "Tweaks",
             "Hover Time",
             0.25f,
             "How long the player will hover in the air after flying"
         );
 
-        QuickSave = Config.Bind(
+        _quickSave = Config.Bind(
             "Keybinds",
             "QuickSave",
             KeyCode.G,
             "Saves your current position"
         );
-        QuickLoad = Config.Bind(
+        _quickLoad = Config.Bind(
             "Keybinds",
             "QuickLoad",
             KeyCode.F,
             "Loads the previously quicksaved position"
         );
 
-        SaveWins = Config.Bind(
+        _saveWins = Config.Bind(
             "_Toggles",
             "Save Victories",
             true,
             "If true, the replay of your run is saved when you reach the finish line"
         );
 
-        SaveRestarts = Config.Bind(
+        _saveRestarts = Config.Bind(
             "_Toggles",
             "Save Restarts",
             false,
             "If true, the replay of your run is saved when you press ctrl+R"
         );
 
-        Fly = new ConfigEntry<KeyCode>[5];
+        _useNonTransparentGhostTexture = Config.Bind(
+            "Tweaks",
+            "Opaque Ghost",
+            false,
+            "Uses an alternative texture for the ghosts"
+        );
+        _ghostTransparency = Config.Bind(
+            "Tweaks",
+            "Ghost Transparency",
+            0.25f,
+            "How transparent the texture will be, where 1 is least transparent"
+        );
+
+        _fly = new ConfigEntry<KeyCode>[5];
         var flyDirs = new[] { "Up", "Left", "Down", "Right", "Still" };
         var flyKeys = new[] { KeyCode.I, KeyCode.J, KeyCode.K, KeyCode.L, KeyCode.O };
         for (var i = 0; i < 5; i++)
         {
-            Fly[i] = Config.Bind(
+            _fly[i] = Config.Bind(
                 "Keybinds",
                 $"Fly {flyDirs[i]}",
                 flyKeys[i],
@@ -130,10 +149,10 @@ public class Plugin : BaseUnityPlugin
             );
         }
 
-        Teleport = new ConfigEntry<KeyboardShortcut>[9];
+        _teleport = new ConfigEntry<KeyboardShortcut>[9];
         for (var i = 0; i < 9; i++)
         {
-            Teleport[i] = Config.Bind(
+            _teleport[i] = Config.Bind(
                 "Keybinds",
                 $"Teleport #{i + 1}",
                 new KeyboardShortcut(KeyCode.Alpha1 + i),
@@ -141,7 +160,7 @@ public class Plugin : BaseUnityPlugin
             );
         }
 
-        AutoReplay = Config.Bind(
+        _autoReplay = Config.Bind(
             "_Toggles",
             "Replay immediately",
             false,
@@ -159,15 +178,24 @@ public class Plugin : BaseUnityPlugin
         EndTeleporterPatch.OnGameEnded += () =>
         {
             _initalized = false;
-            StopRecording(SaveWins.Value);
+            StopRecording(_saveWins.Value);
         };
         SceneManager.sceneUnloaded += _ =>
         {
             if (!_initalized) return;
             _initalized = false;
-            StopRecording(SaveRestarts.Value);
+            StopRecording(_saveRestarts.Value);
         };
         ClimberMainPatch.OnClimberSpawned += Initialize;
+
+        LoadGhostMaterial();
+        _useNonTransparentGhostTexture.SettingChanged += (_, _) =>
+        {
+            Destroy(_ghostMaterial);
+            _ghostMaterial = null;
+            LoadGhostMaterial();
+        };
+        _ghostTransparency.SettingChanged += (_, _) => SetGhostTransparency();
     }
 
 
@@ -243,7 +271,7 @@ public class Plugin : BaseUnityPlugin
 
     private void TeleportStuff()
     {
-        if (!EnableTeleport.Value) return;
+        if (!_enableTeleport.Value) return;
         var endPoints = new[]
         {
             new Vector2(2f, -6f),
@@ -258,7 +286,7 @@ public class Plugin : BaseUnityPlugin
         };
         for (var i = 0; i < endPoints.Length; i++)
         {
-            if (!Teleport[i].Value.IsDown()) continue;
+            if (!_teleport[i].Value.IsDown()) continue;
             _initalized = false;
             StopRecording(false);
             FindObjectOfType<PlayerSpawn>().Respawn(endPoints[i]);
@@ -269,7 +297,7 @@ public class Plugin : BaseUnityPlugin
 
     private void FlyStuff()
     {
-        if (!EnableFly.Value) return;
+        if (!_enableFly.Value) return;
         var forces = new[]
         {
             Vector3.up * 10,
@@ -283,8 +311,8 @@ public class Plugin : BaseUnityPlugin
         var sumForces = Vector3.zero;
         for (var i = 0; i < 5; i++)
         {
-            if (!Input.GetKey(Fly[i].Value)) continue;
-            _hovering = HoverTime.Value;
+            if (!Input.GetKey(_fly[i].Value)) continue;
+            _hovering = _hoverTime.Value;
             sumForces += forces[i];
         }
 
@@ -299,13 +327,13 @@ public class Plugin : BaseUnityPlugin
 
     private void QuickSaveStuff()
     {
-        if (!EnableQuickSave.Value) return;
-        if (Input.GetKeyDown(QuickSave.Value))
+        if (!_enableQuickSave.Value) return;
+        if (Input.GetKeyDown(_quickSave.Value))
         {
             DoPhysicsSave();
         }
 
-        if (Input.GetKeyDown(QuickLoad.Value))
+        if (Input.GetKeyDown(_quickLoad.Value))
         {
             DoPhysicsLoad();
         }
@@ -398,7 +426,7 @@ public class Plugin : BaseUnityPlugin
 
     private void StartRecording(ClimberMain climberMain)
     {
-        if (!EnableRecording.Value)
+        if (!_enableRecording.Value)
         {
             Logger.LogInfo("Not Starting Recording");
             return;
@@ -437,9 +465,9 @@ public class Plugin : BaseUnityPlugin
             Keyframes = recorder.Keyframes.ToArray(),
         };
 
-        if (AutoReplay.Value)
+        if (_autoReplay.Value)
         {
-            Logger.LogError($"{AutoReplay.Value} {EnableRecording.Value}");
+            Logger.LogError($"{_autoReplay.Value} {_enableRecording.Value}");
             _recordings.Add(keyFrameData);
         }
 
@@ -529,9 +557,8 @@ public class Plugin : BaseUnityPlugin
                 data.Keyframes.ToArray()
             )
         );
-        var material = LoadGhostMaterial();
         var meshRenderer = root.Find("Body").GetComponent<SkinnedMeshRenderer>();
-        meshRenderer.sharedMaterials = new[] { material, material };
+        meshRenderer.sharedMaterials = new[] { _ghostMaterial, _ghostMaterial };
     }
 
     private Transform[] MatchTransformLists(List<Transform> children, List<string> currentNames, string[] oldNames)
@@ -561,29 +588,43 @@ public class Plugin : BaseUnityPlugin
         return result;
     }
 
-    private Material LoadGhostMaterial()
+    private void LoadGhostMaterial()
     {
         var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = "SpeedrunningTools.ghost";
+        var resourceName = _useNonTransparentGhostTexture.Value
+            ? "SpeedrunningTools.ghost"
+            : "SpeedrunningTools.ghost2";
         using var stream = assembly.GetManifestResourceStream(resourceName);
         if (stream == null)
         {
             Logger.LogError("(stream) Failed to load ghost material AssetBundle!");
-            return null;
+            return;
         }
 
         var buffer = new byte[stream.Length];
-        stream.Read(buffer, 0, buffer.Length);
+        _ = stream.Read(buffer, 0, buffer.Length);
         var assetBundle = AssetBundle.LoadFromMemory(buffer);
         if (assetBundle == null)
         {
             Logger.LogError("(bundle) Failed to load ghost material AssetBundle!");
-            return null;
+            return;
         }
 
-        var matName = "assets/customshaders/ghost/ghost material.mat";
-        var ghostMaterial = assetBundle.LoadAsset<Material>(matName);
+        var matName = assetBundle.GetAllAssetNames().FirstOrDefault(path => path.EndsWith(".mat"));
+        if (string.IsNullOrEmpty(matName))
+        {
+            Logger.LogError("(bundle) No materials in AssetBundle!");
+            return;
+        }
+
+        _ghostMaterial = assetBundle.LoadAsset<Material>(matName);
         assetBundle.Unload(false);
-        return ghostMaterial;
+        SetGhostTransparency();
+    }
+
+    private void SetGhostTransparency()
+    {
+        if (_useNonTransparentGhostTexture.Value) return;
+        _ghostMaterial.SetFloat(SmoothAdd, _ghostTransparency.Value);
     }
 }

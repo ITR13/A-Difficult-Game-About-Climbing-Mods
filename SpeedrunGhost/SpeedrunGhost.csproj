@@ -42,6 +42,8 @@
   <ItemGroup>
     <None Remove="ghost.unitypackage" />
     <EmbeddedResource Include="ghost" />
+    <None Remove="ghost2" />
+    <EmbeddedResource Include="ghost2" />
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
