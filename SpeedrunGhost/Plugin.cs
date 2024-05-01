@@ -182,7 +182,7 @@ public class Plugin : BaseUnityPlugin
         EndTeleporterPatch.OnGameEnded += () =>
         {
             _initalized = false;
-            StopRecording(_saveWins.Value);
+            StopRecording(_saveWins.Value, Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime);
         };
         SceneManager.sceneUnloaded += _ =>
         {
@@ -304,7 +304,7 @@ public class Plugin : BaseUnityPlugin
             return;
         }
     }
-    
+
     private void RestartStuff()
     {
         if (!Input.GetKeyDown(KeyCode.B)) return;
@@ -517,7 +517,7 @@ public class Plugin : BaseUnityPlugin
         Logger.LogInfo("Started Recording");
     }
 
-    private void StopRecording(bool save)
+    private void StopRecording(bool save, float time = 0)
     {
         _quickSaveData.Valid = false;
         var recorder = _recorder;
@@ -542,6 +542,17 @@ public class Plugin : BaseUnityPlugin
         Logger.LogInfo("Saving recording");
 
         var datetime = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+
+        if (time > 10)
+        {
+            time = Mathf.Round(time * 10000) / 10000;
+            var seconds = time % 60;
+            var minutes = Mathf.FloorToInt(time / 60);
+            var hours = minutes / 60;
+
+            datetime = $"{datetime}__{hours:00}-{minutes:00}-{seconds:00.0000}";
+        }
+
         var path = Path.Combine(_replaysFolder, datetime + ".bin");
 
         var retries = 0;
