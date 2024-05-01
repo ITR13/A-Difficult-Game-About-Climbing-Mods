@@ -42,9 +42,9 @@ public class Plugin : BaseUnityPlugin
     private readonly List<Playback> _playbacks = new();
 
     private bool _initalized;
-    private Rigidbody2D[] _playerBodies;
-    private LegScript[] _playerLegScripts;
-    private ArmScript_v2[] _playerArmScripts;
+    private Dictionary<string, Rigidbody2D> _playerBodies = new();
+    private Dictionary<string, LegScript> _playerLegScripts = new();
+    private Dictionary<string, ArmScript_v2> _playerArmScripts = new();
     private Transform[] _playerTransforms;
 
     private float _hovering;
@@ -237,12 +237,18 @@ public class Plugin : BaseUnityPlugin
     private void Initialize(ClimberMain climberMain)
     {
         _initalized = false;
-        _playerBodies = climberMain.GetComponentsInChildren<Rigidbody2D>();
-        _playerLegScripts = climberMain.GetComponentsInChildren<LegScript>();
-        _playerArmScripts = climberMain.GetComponentsInChildren<ArmScript_v2>();
+        _playerBodies.Clear();
+        _playerLegScripts.Clear();
+        _playerArmScripts.Clear();
 
         var transforms = new List<Transform>();
-        IterateDown(climberMain.transform, transforms, new List<string>());
+        IterateDownGetComponents(
+            climberMain.transform,
+            transforms,
+            _playerBodies,
+            _playerLegScripts,
+            _playerArmScripts
+        );
         _playerTransforms = transforms.ToArray();
 
         StartRecording(climberMain);
@@ -349,7 +355,7 @@ public class Plugin : BaseUnityPlugin
 
         if (!(_hovering > 0)) return;
 
-        foreach (var rb in _playerBodies)
+        foreach (var rb in _playerBodies.Values)
         {
             rb.velocity = sumForces;
             rb.AddForce(-Physics.gravity * rb.mass);
@@ -374,13 +380,13 @@ public class Plugin : BaseUnityPlugin
     private void DoPhysicsSave()
     {
         Logger.LogInfo("QuickSave!");
-        var positions = new Vector3[_playerBodies.Length];
-        var rotations = new float[_playerBodies.Length];
-        var velocities = new Vector2[_playerBodies.Length];
-        var angularVelocities = new float[_playerBodies.Length];
+        var positions = new Dictionary<string, Vector3>(_playerBodies.Count);
+        var rotations = new Dictionary<string, float>(_playerBodies.Count);
+        var velocities = new Dictionary<string, Vector2>(_playerBodies.Count);
+        var angularVelocities = new Dictionary<string, float>(_playerBodies.Count);
 
-        var legOffsets = new Vector2[_playerLegScripts.Length];
-        var grabStates = new bool[_playerArmScripts.Length];
+        var legOffsets = new Dictionary<string, Vector2>(_playerLegScripts.Count);
+        var grabStates = new Dictionary<string, bool>(_playerArmScripts.Count);
 
         var transformPositions = new Vector3[_playerTransforms.Length];
         var transformRotations = new Quaternion[_playerTransforms.Length];
@@ -393,31 +399,34 @@ public class Plugin : BaseUnityPlugin
             transformRotations[i] = t.rotation;
         }
 
-        for (var i = 0; i < _playerBodies.Length; i++)
+        foreach (var (key, rb) in _playerBodies)
         {
-            var rb = _playerBodies[i];
             if (rb == null) continue;
-            positions[i] = rb.position;
-            rotations[i] = rb.rotation;
-            velocities[i] = rb.velocity;
-            angularVelocities[i] = rb.angularVelocity;
+            positions.Add(key, rb.position);
+            rotations.Add(key, rb.rotation);
+            velocities.Add(key, rb.velocity);
+            angularVelocities.Add(key, rb.angularVelocity);
         }
 
-        for (var i = 0; i < _playerLegScripts.Length; i++)
+        foreach (var (key, legscript) in _playerLegScripts)
         {
-            if (_playerLegScripts[i] == null) continue;
-            legOffsets[i] = Traverse.Create(_playerLegScripts[i]).Field("offset").GetValue<Vector2>();
+            if (legscript == null) continue;
+            legOffsets.Add(key, Traverse.Create(legscript).Field("offset").GetValue<Vector2>());
         }
 
-        for (var i = 0; i < _playerArmScripts.Length; i++)
+        foreach (var (key, armscript) in _playerArmScripts)
         {
-            grabStates[i] = _playerArmScripts[i].isGrabbing;
+            grabStates.Add(key, armscript.isGrabbing);
         }
+
+        var mainCamera = Camera.main;
+        var cameraPos = mainCamera != null ? mainCamera.transform.position : Vector3.zero;
 
         _quickSaveData = new QuickSaveData
         {
             Valid = true,
             Time = _recordingTimer,
+            CameraPosition = cameraPos,
             Positions = positions,
             Rotations = rotations,
             Velocities = velocities,
@@ -436,6 +445,12 @@ public class Plugin : BaseUnityPlugin
         if (!_quickSaveData.Valid) return;
         Logger.LogInfo("QuickLoad!");
 
+        var mainCamera = Camera.main;
+        if (mainCamera != null && _quickSaveData.CameraPosition != Vector3.zero)
+        {
+            mainCamera.transform.position = _quickSaveData.CameraPosition;
+        }
+
         for (var i = 0; i < _playerTransforms.Length; i++)
         {
             var t = _playerTransforms[i];
@@ -444,37 +459,35 @@ public class Plugin : BaseUnityPlugin
             t.rotation = _quickSaveData.TransformRotations[i];
         }
 
-        for (var i = 0; i < _playerBodies.Length; i++)
+        foreach (var (key, rb) in _playerBodies)
         {
-            var rb = _playerBodies[i];
             if (rb == null) return;
-            rb.position = _quickSaveData.Positions[i];
-            rb.rotation = _quickSaveData.Rotations[i];
-            rb.velocity = _quickSaveData.Velocities[i];
-            rb.angularVelocity = _quickSaveData.AngularVelocites[i];
+            if (_quickSaveData.Positions.TryGetValue(key, out var pos)) rb.position = pos;
+            if (_quickSaveData.Rotations.TryGetValue(key, out var rot)) rb.rotation = rot;
+            if (_quickSaveData.Velocities.TryGetValue(key, out var vel)) rb.velocity = vel;
+            if (_quickSaveData.AngularVelocites.TryGetValue(key, out var avel)) rb.angularVelocity = avel;
         }
 
-        for (var i = 0; i < _playerLegScripts.Length; i++)
+        foreach (var (key, legscript) in _playerLegScripts)
         {
-            if (_playerLegScripts[i] == null) continue;
-            Traverse.Create(_playerLegScripts[i]).Field("offset").SetValue(_quickSaveData.LegOffsets[i]);
+            if (legscript == null || !_quickSaveData.LegOffsets.TryGetValue(key, out var offset)) continue;
+
+            Traverse.Create(legscript).Field("offset").SetValue(offset);
         }
 
-        for (var i = 0; i < _playerArmScripts.Length; i++)
+        foreach (var (key, armscript) in _playerArmScripts)
         {
-            var armScript = _playerArmScripts[i];
-            if (armScript == null) continue;
-            if (_quickSaveData.GrabState[i])
+            if (armscript == null || !_quickSaveData.GrabState.TryGetValue(key, out var grabState)) continue;
+            if (grabState)
             {
-                armScript.ToggleGrab();
+                armscript.ToggleGrab();
             }
             else
             {
-                armScript.isGrabbing = false;
-                Traverse.Create(armScript).Method("ReleaseSurface", true, false).GetValue();
+                armscript.isGrabbing = false;
+                Traverse.Create(armscript).Method("ReleaseSurface", true, false).GetValue();
             }
         }
-
 
         if (_recorder != null)
         {
@@ -483,6 +496,7 @@ public class Plugin : BaseUnityPlugin
             _nextKeyframe = _recorder.Keyframes[^1].Time + Interval;
         }
 
+        if (!_quickSaveData.RecordingValid) return;
         foreach (var playback in _playbacks)
         {
             playback.JumpTo(_recordingTimer);
@@ -545,7 +559,7 @@ public class Plugin : BaseUnityPlugin
 
     private void StopRecording(bool save, float time = 0)
     {
-        _quickSaveData.Valid = false;
+        _quickSaveData.RecordingValid = false;
         var recorder = _recorder;
         _recorder = null;
         if (recorder == null) return;
@@ -609,6 +623,40 @@ public class Plugin : BaseUnityPlugin
         foreach (Transform child in currentTransform)
         {
             IterateDown(child, list, names, objectName);
+        }
+    }
+
+    private void IterateDownGetComponents(
+        Transform currentTransform,
+        List<Transform> list,
+        Dictionary<string, Rigidbody2D> playerBodies,
+        Dictionary<string, LegScript> playerLegScripts,
+        Dictionary<string, ArmScript_v2> playerArmScripts,
+        string parentName = null
+    )
+    {
+        if (currentTransform.GetComponent<ParticleSystem>()) return;
+        var objectName = (string.IsNullOrEmpty(parentName) ? "" : parentName + "\n") + currentTransform.gameObject.name;
+
+        if (currentTransform.TryGetComponent(out Rigidbody2D rb))
+        {
+            playerBodies.Add(objectName, rb);
+        }
+
+        if (currentTransform.TryGetComponent(out LegScript legScript))
+        {
+            playerLegScripts.Add(objectName, legScript);
+        }
+
+        if (currentTransform.TryGetComponent(out ArmScript_v2 armScript))
+        {
+            playerArmScripts.Add(objectName, armScript);
+        }
+
+        list.Add(currentTransform);
+        foreach (Transform child in currentTransform)
+        {
+            IterateDownGetComponents(child, list, playerBodies, playerLegScripts, playerArmScripts, objectName);
         }
     }
 
