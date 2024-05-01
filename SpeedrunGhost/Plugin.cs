@@ -467,9 +467,11 @@ public class Plugin : BaseUnityPlugin
             if (_quickSaveData.GrabState[i])
             {
                 armScript.ToggleGrab();
-            }else{
+            }
+            else
+            {
                 armScript.isGrabbing = false;
-                Traverse.Create(armScript).Method("ReleaseSurface", true, false);
+                Traverse.Create(armScript).Method("ReleaseSurface", true, false).GetValue();
             }
         }
 
