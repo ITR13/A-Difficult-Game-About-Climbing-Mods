@@ -16,4 +16,6 @@ public struct QuickSaveData
     public Quaternion[] TransformRotations;
     
     public Vector2[] LegOffsets;
+
+    public bool[] GrabState;
 }

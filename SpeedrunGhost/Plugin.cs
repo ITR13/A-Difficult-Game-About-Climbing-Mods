@@ -44,6 +44,7 @@ public class Plugin : BaseUnityPlugin
     private bool _initalized;
     private Rigidbody2D[] _playerBodies;
     private LegScript[] _playerLegScripts;
+    private ArmScript_v2[] _playerArmScripts;
     private Transform[] _playerTransforms;
 
     private float _hovering;
@@ -238,6 +239,7 @@ public class Plugin : BaseUnityPlugin
         _initalized = false;
         _playerBodies = climberMain.GetComponentsInChildren<Rigidbody2D>();
         _playerLegScripts = climberMain.GetComponentsInChildren<LegScript>();
+        _playerArmScripts = climberMain.GetComponentsInChildren<ArmScript_v2>();
 
         var transforms = new List<Transform>();
         IterateDown(climberMain.transform, transforms, new List<string>());
@@ -378,6 +380,7 @@ public class Plugin : BaseUnityPlugin
         var angularVelocities = new float[_playerBodies.Length];
 
         var legOffsets = new Vector2[_playerLegScripts.Length];
+        var grabStates = new bool[_playerArmScripts.Length];
 
         var transformPositions = new Vector3[_playerTransforms.Length];
         var transformRotations = new Quaternion[_playerTransforms.Length];
@@ -406,6 +409,11 @@ public class Plugin : BaseUnityPlugin
             legOffsets[i] = Traverse.Create(_playerLegScripts[i]).Field("offset").GetValue<Vector2>();
         }
 
+        for (var i = 0; i < _playerArmScripts.Length; i++)
+        {
+            grabStates[i] = _playerArmScripts[i].isGrabbing;
+        }
+
         _quickSaveData = new QuickSaveData
         {
             Valid = true,
@@ -418,6 +426,8 @@ public class Plugin : BaseUnityPlugin
 
             TransformPositions = transformPositions,
             TransformRotations = transformRotations,
+
+            GrabState = grabStates,
         };
     }
 
@@ -449,6 +459,20 @@ public class Plugin : BaseUnityPlugin
             if (_playerLegScripts[i] == null) continue;
             Traverse.Create(_playerLegScripts[i]).Field("offset").SetValue(_quickSaveData.LegOffsets[i]);
         }
+
+        for (var i = 0; i < _playerArmScripts.Length; i++)
+        {
+            var armScript = _playerArmScripts[i];
+            if (armScript == null) continue;
+            if (_quickSaveData.GrabState[i])
+            {
+                armScript.ToggleGrab();
+            }else{
+                armScript.isGrabbing = false;
+                Traverse.Create(armScript).Method("ReleaseSurface", true, false);
+            }
+        }
+
 
         if (_recorder != null)
         {
