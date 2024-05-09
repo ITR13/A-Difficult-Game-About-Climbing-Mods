@@ -205,7 +205,7 @@ public class Plugin : BaseUnityPlugin
         _inputRateDropdown.onValueChanged.m_PersistentCalls.Clear();
 
         _inputRateDropdown.ClearOptions();
-        _inputRateDropdown.AddOptions(new List<string> { "", "", "", "" });
+        _inputRateDropdown.AddOptions(new List<string> { "", "", "", "", "" });
 
         _inputRateDropdown.onValueChanged.AddListener(newValue => OnDemandRenderingCount.Value = newValue + 1);
         _inputRateDropdown.SetValueWithoutNotify(OnDemandRenderingCount.Value - 1);
@@ -214,14 +214,14 @@ public class Plugin : BaseUnityPlugin
 
     private void SetFPS(int selection)
     {
-        OnDemandRendering.renderFrameInterval = OnDemandRenderingCount.Value;
+        OnDemandRendering.renderFrameInterval = OnDemandRenderingCount.Value == 5 ? 8 : OnDemandRenderingCount.Value;
         Application.targetFrameRate = selection switch
         {
-            0 => 60 * OnDemandRenderingCount.Value,
-            1 => 100 * OnDemandRenderingCount.Value,
-            2 => 120 * OnDemandRenderingCount.Value,
-            3 => 144 * OnDemandRenderingCount.Value,
-            4 => 240 * OnDemandRenderingCount.Value,
+            0 => 60 * OnDemandRendering.renderFrameInterval,
+            1 => 100 * OnDemandRendering.renderFrameInterval,
+            2 => 120 * OnDemandRendering.renderFrameInterval,
+            3 => 144 * OnDemandRendering.renderFrameInterval,
+            4 => 240 * OnDemandRendering.renderFrameInterval,
             5 => 0,
             _ => Application.targetFrameRate
         };
@@ -236,9 +236,12 @@ public class Plugin : BaseUnityPlugin
         var baseFramerate = UseVsync.Value
             ? Screen.currentResolution.refreshRate
             : Application.targetFrameRate / OnDemandRenderingCount.Value;
-        for (var i = 1; i <= 4; i++)
+        for (var i = 1; i <= 5; i++)
         {
-            _inputRateDropdown.options[i - 1].text = baseFramerate == 0 ? $"Unlimited x {i}" : $"{baseFramerate * i}";
+            var index = i - 1;
+            if(i == 5) i = 8;
+            
+            _inputRateDropdown.options[index].text = baseFramerate == 0 ? $"Unlimited x {i}" : $"{baseFramerate * i}";
         }
 
         _inputRateDropdown.RefreshShownValue();
