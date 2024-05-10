@@ -62,7 +62,7 @@ public static class SocketManager
         FinalSplitMessage.Add(encoding.GetBytes("setgametime "));
         FinalSplitMessage.Add(null);
         FinalSplitMessage.Add(encoding.GetBytes("\r\nsplit\r\n"));
-        
+
         UpdateStates.Add(encoding.GetBytes("getcurrenttimerphase\r\n"));
     }
 
@@ -78,7 +78,7 @@ public static class SocketManager
         Plugin.Log($"Connecting to server...");
         try
         {
-            await _socket.ConnectAsync("localhost", 16834);
+            await _socket.ConnectAsync(Plugin.SocketAddress, Plugin.SocketPort);
         }
         catch (SocketException socketException)
         {
@@ -237,7 +237,7 @@ public static class SocketManager
             {
                 await _socket.SendAsync(SplitMessage, SocketFlags.None);
             }
-            
+
             await _socket.SendAsync(GetCurrentTimerPhase, SocketFlags.None);
         }
         finally

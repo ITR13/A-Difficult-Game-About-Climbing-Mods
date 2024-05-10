@@ -38,6 +38,11 @@ public class Plugin : BaseUnityPlugin
     private float _errorTimer;
 
     private ConfigEntry<bool> _useServer, _useInGameTime, _showModList;
+    private static ConfigEntry<string> _socketAddress;
+    private static ConfigEntry<int> _socketPort;
+
+    public static string SocketAddress => _socketAddress.Value;
+    public static int SocketPort => _socketPort.Value;
 
     private void Awake()
     {
@@ -63,6 +68,20 @@ public class Plugin : BaseUnityPlugin
             true,
             "Shows a list of installed mods in the top left courner of the screen"
         );
+
+        _socketAddress = Config.Bind(
+            "Sockets",
+            "Socket Address",
+            "localhost",
+            "What address the livesplit server is on. If you're uisng it on the same computer then just leave this at localhost."
+        );
+        _socketPort = Config.Bind(
+            "Sockets",
+            "Socket Port",
+            16834,
+            "What port the livesplit server is on."
+        );
+
         UseServer = _useServer.Value;
         _useServer.SettingChanged += (_, _) => UseServer = _useServer.Value;
         UseInGameTime = _useInGameTime.Value;
