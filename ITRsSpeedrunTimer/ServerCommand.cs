@@ -14,4 +14,5 @@ public enum ServerCommand
     Reset,
     Pause,
     Unpause,
+    UpdateStatus,
 }

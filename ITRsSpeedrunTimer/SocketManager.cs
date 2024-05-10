@@ -41,7 +41,8 @@ public static class SocketManager
     private static readonly List<ArraySegment<byte>> FinalSplitMessage = new(),
         PauseMessage = new(),
         UnpauseMessage = new(),
-        SetTimerMessage = new();
+        SetTimerMessage = new(),
+        UpdateStates = new();
 
     static SocketManager()
     {
@@ -61,6 +62,8 @@ public static class SocketManager
         FinalSplitMessage.Add(encoding.GetBytes("setgametime "));
         FinalSplitMessage.Add(null);
         FinalSplitMessage.Add(encoding.GetBytes("\r\nsplit\r\n"));
+        
+        UpdateStates.Add(encoding.GetBytes("getcurrenttimerphase\r\n"));
     }
 
     private static async void Connect()
@@ -134,7 +137,7 @@ public static class SocketManager
 
         // Since we compare a float to itself, we don't need to smush the comparison
         // ReSharper disable once CompareOfFloatsByEqualityOperator
-        if (Commands.Count == 0 && TimeToSync != previousTime)
+        if (Commands.Count == 0 && TimeToSync != previousTime && _timerPhase != TimerPhase.Ended)
         {
             var text = TimeToSync.ToString(CultureInfo.InvariantCulture);
             // Plugin.Log($"Syncing time: {text}");
@@ -146,7 +149,7 @@ public static class SocketManager
         {
             while (Commands.TryDequeue(out var command))
             {
-                Plugin.Log($"Command: {command}");
+                // Plugin.Log($"Command: {command}");
                 switch (command)
                 {
                     case ServerCommand.StartTimer:
@@ -158,6 +161,9 @@ public static class SocketManager
                     case ServerCommand.Reset:
                         TimeToSync = 0;
                         ResetIfRunningOrPaused();
+                        break;
+                    case ServerCommand.UpdateStatus:
+                        Command(UpdateStates);
                         break;
                     case ServerCommand.Pause:
                         Command(PauseMessage);
@@ -231,6 +237,8 @@ public static class SocketManager
             {
                 await _socket.SendAsync(SplitMessage, SocketFlags.None);
             }
+            
+            await _socket.SendAsync(GetCurrentTimerPhase, SocketFlags.None);
         }
         finally
         {
@@ -276,7 +284,7 @@ public static class SocketManager
                 continue;
             }
 
-            Plugin.Log($"`{text}`");
+            // Plugin.Log($"`{text}`");
 
             if (text.Length <= 3 && text[0] == '-')
             {

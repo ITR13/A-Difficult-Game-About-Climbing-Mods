@@ -138,6 +138,10 @@ public class Plugin : BaseUnityPlugin
             SocketManager.Commands.Clear();
             SocketManager.Commands.Enqueue(ServerCommand.Reset);
         }
+        else
+        {
+            SocketManager.Commands.Enqueue(ServerCommand.UpdateStatus);
+        }
 
         _currentPhase = ServerCommand.StartTimer;
     }
