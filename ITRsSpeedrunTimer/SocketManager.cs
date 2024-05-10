@@ -82,7 +82,7 @@ public static class SocketManager
         }
         catch (SocketException socketException)
         {
-            Plugin.LogError($"Failed to connect to socket: {socketException.Message}");
+            Plugin.LogError($"Failed to connect to server! Did you remember to start it?\n{socketException.Message}");
             _timer = DateTime.Now.Ticks + _timerMax * TimeSpan.TicksPerSecond;
             _timerMax = Math.Min(_timerMax + 2, 30);
             return;
