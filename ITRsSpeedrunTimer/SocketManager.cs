@@ -1,19 +1,23 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
+using System.IO.Pipes;
 using System.Linq;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using HarmonyLib;
 using UnityEngine;
 
 namespace ITRsSpeedrunTimer;
 
 public static class SocketManager
 {
-    private static Socket _socket;
+    private static StreamWriter _streamWriter;
+    private static StreamReader _streamReader;
     private static bool _communicating = false;
     private static long _timer, _timerMax;
 
@@ -23,22 +27,22 @@ public static class SocketManager
     private static ServerCommand _expectedCommand = ServerCommand.StartTimer;
     private static TimerPhase _timerPhase = TimerPhase.None;
 
-    private static readonly ReadOnlyMemory<byte> StartTimerMessage =
-        new("starttimer\r\n".Select(c => (byte)c).ToArray());
+    private static readonly ReadOnlyMemory<char> StartTimerMessage =
+        new("starttimer\r\n".ToArray());
 
-    private static readonly ReadOnlyMemory<byte> SplitMessage = new("split\r\n".Select(c => (byte)c).ToArray());
-    private static readonly ReadOnlyMemory<byte> SkipMessage = new("skipsplit\r\n".Select(c => (byte)c).ToArray());
+    private static readonly ReadOnlyMemory<char> SplitMessage = new("split\r\n".ToArray());
+    private static readonly ReadOnlyMemory<char> SkipMessage = new("skipsplit\r\n".ToArray());
 
-    private static readonly ReadOnlyMemory<byte> GetCurrentSplitName =
-        new("getcurrentsplitname\r\n".Select(c => (byte)c).ToArray());
+    private static readonly ReadOnlyMemory<char> GetCurrentSplitName =
+        new("getcurrentsplitname\r\n".ToArray());
 
-    private static readonly ReadOnlyMemory<byte> GetCurrentTimerPhase =
-        new("getcurrenttimerphase\r\n".Select(c => (byte)c).ToArray());
+    private static readonly ReadOnlyMemory<char> GetCurrentTimerPhase =
+        new("getcurrenttimerphase\r\n".ToArray());
 
-    private static readonly ReadOnlyMemory<byte> Reset =
-        new("reset\r\n".Select(c => (byte)c).ToArray());
+    private static readonly ReadOnlyMemory<char> Reset =
+        new("reset\r\n".ToArray());
 
-    private static readonly List<ArraySegment<byte>> FinalSplitMessage = new(),
+    private static readonly List<string> FinalSplitMessage = new(),
         PauseMessage = new(),
         UnpauseMessage = new(),
         SetTimerMessage = new(),
@@ -46,45 +50,45 @@ public static class SocketManager
 
     static SocketManager()
     {
-        var encoding = Encoding.ASCII;
-        var un = encoding.GetBytes("un");
-        var pause = encoding.GetBytes("pausegametime\r\n");
+        var un = "un";
+        var pause = "pausegametime\r\n";
 
         PauseMessage.Add(pause);
 
         UnpauseMessage.Add(un);
         UnpauseMessage.Add(pause);
 
-        SetTimerMessage.Add(encoding.GetBytes("setgametime "));
+        SetTimerMessage.Add("setgametime ");
         SetTimerMessage.Add(null);
-        SetTimerMessage.Add(encoding.GetBytes("\r\n"));
+        SetTimerMessage.Add("\r\n");
 
-        FinalSplitMessage.Add(encoding.GetBytes("setgametime "));
+        FinalSplitMessage.Add("setgametime ");
         FinalSplitMessage.Add(null);
-        FinalSplitMessage.Add(encoding.GetBytes("\r\nsplit\r\n"));
+        FinalSplitMessage.Add("\r\nsplit\r\n");
 
-        UpdateStates.Add(encoding.GetBytes("getcurrenttimerphase\r\n"));
+        UpdateStates.Add("getcurrenttimerphase\r\n");
     }
 
-    private static async void Connect()
+    private static void Connect()
     {
         if (_communicating) return;
         if (!Plugin.UseServer) return;
 
-        Disconnect();
         _communicating = true;
-        _socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
 
         Plugin.Log($"Connecting to server...");
+        Stream stream;
         try
         {
-            await _socket.ConnectAsync(Plugin.SocketAddress, Plugin.SocketPort);
+            stream = new NamedPipeClientStream("LiveSplit");
         }
-        catch (SocketException socketException)
+        catch (Win32Exception win32Exception)
         {
-            Plugin.LogError($"Failed to connect to server! Did you remember to start it?\n{socketException.Message}");
+            Plugin.LogError($"Livesplit might be closed!\n{win32Exception.Message}");
             _timer = DateTime.Now.Ticks + _timerMax * TimeSpan.TicksPerSecond;
-            _timerMax = Math.Min(_timerMax + 2, 30);
+            _timerMax = Math.Min(_timerMax + 2, 10);
+            _streamWriter = null;
+            _streamReader = null;
             return;
         }
         finally
@@ -92,19 +96,24 @@ public static class SocketManager
             _communicating = false;
         }
 
-        // Plugin.Log($"Starting socket loop...");
-        ReadMessagesLoop(_socket);
+        if (stream is not { CanWrite: true, CanRead: true })
+        {
+            Plugin.LogError($"Livesplit is closed!");
+            _timer = DateTime.Now.Ticks + _timerMax * TimeSpan.TicksPerSecond;
+            _timerMax = Math.Min(_timerMax + 2, 10);
+            _streamWriter = null;
+            _streamReader = null;
+            return;
+        }
 
-        _timer = 1;
+        _streamWriter = new StreamWriter(stream);
+        _streamReader = new StreamReader(stream, Encoding.ASCII, false, 1024, true);
+
+        Commands.Clear();
+        ReadMessagesLoop(_streamReader);
+
+        _timer = DateTime.Now.Ticks + 1 * TimeSpan.TicksPerSecond;
         _timerMax = 1;
-    }
-
-    private static void Disconnect()
-    {
-        // Plugin.Log($"Disconnecting...");
-        if (_socket == null) return;
-        if (_socket.Connected) _socket.Disconnect(false);
-        _socket = null;
     }
 
     public static void ThreadedLoop(CancellationToken token)
@@ -115,7 +124,7 @@ public static class SocketManager
             Thread.Sleep(0);
             try
             {
-                CheckAll(ref previousTime);
+                CheckAll(ref previousTime, token);
             }
             catch (Exception e)
             {
@@ -124,11 +133,11 @@ public static class SocketManager
         }
     }
 
-    private static void CheckAll(ref float previousTime)
+    private static void CheckAll(ref float previousTime, CancellationToken token)
     {
         if (_communicating) return;
 
-        if (_socket is not { Connected: true })
+        if (_streamWriter?.BaseStream is not { CanWrite: true })
         {
             if (_timer > DateTime.Now.Ticks) return;
             Connect();
@@ -142,8 +151,8 @@ public static class SocketManager
             var text = TimeToSync.ToString(CultureInfo.InvariantCulture);
             // Plugin.Log($"Syncing time: {text}");
             previousTime = TimeToSync;
-            SetTimerMessage[^2] = Encoding.ASCII.GetBytes(text);
-            Command(SetTimerMessage);
+            SetTimerMessage[^2] = text;
+            Command(SetTimerMessage, token);
         }
         else
         {
@@ -153,23 +162,23 @@ public static class SocketManager
                 switch (command)
                 {
                     case ServerCommand.StartTimer:
-                        CommandAndGetSplitname(StartTimerMessage);
+                        CommandAndGetSplitname(StartTimerMessage, token);
                         break;
                     case ServerCommand.SplitFinal:
-                        FinalSplit();
+                        FinalSplit(token);
                         break;
                     case ServerCommand.Reset:
                         TimeToSync = 0;
-                        ResetIfRunningOrPaused();
+                        ResetIfRunningOrPaused(token);
                         break;
                     case ServerCommand.UpdateStatus:
-                        Command(UpdateStates);
+                        Command(UpdateStates, token);
                         break;
                     case ServerCommand.Pause:
-                        Command(PauseMessage);
+                        Command(PauseMessage, token);
                         break;
                     case ServerCommand.Unpause:
-                        Command(UnpauseMessage);
+                        Command(UnpauseMessage, token);
                         break;
                     case ServerCommand.SplitIntro:
                     case ServerCommand.SplitJungle:
@@ -179,19 +188,19 @@ public static class SocketManager
                     case ServerCommand.SplitCave:
                     case ServerCommand.SplitIce:
                         if (_expectedCommand <= command && _expectedCommand != ServerCommand.StartTimer)
-                            CommandAndGetSplitname(SplitMessage);
+                            CommandAndGetSplitname(SplitMessage, token);
                         break;
                 }
             }
         }
     }
 
-    private static async void Command(List<ArraySegment<byte>> command)
+    private static async void Command(List<string> command, CancellationToken token)
     {
         _communicating = true;
         try
         {
-            await _socket.SendAsync(command, SocketFlags.None);
+            await _streamWriter.WriteAsync(string.Join("", command));
         }
         finally
         {
@@ -199,14 +208,14 @@ public static class SocketManager
         }
     }
 
-    private static async void CommandAndGetSplitname(ReadOnlyMemory<byte> command)
+    private static async void CommandAndGetSplitname(ReadOnlyMemory<char> command, CancellationToken token)
     {
-        // Plugin.Log($"Sending command: " + new string(command.ToArray().Select(c => (char)c).ToArray()));
+        // Plugin.Log($"Sending command: " + new string(command));
         _communicating = true;
         try
         {
-            await _socket.SendAsync(command, SocketFlags.None);
-            await _socket.SendAsync(GetCurrentSplitName, SocketFlags.None);
+            await _streamWriter.WriteAsync(command, token);
+            await _streamWriter.WriteAsync(GetCurrentSplitName, token);
         }
         finally
         {
@@ -214,7 +223,7 @@ public static class SocketManager
         }
     }
 
-    private static async void FinalSplit()
+    private static async void FinalSplit(CancellationToken token)
     {
         // Plugin.Log($"Sending final split");
         _communicating = true;
@@ -223,22 +232,22 @@ public static class SocketManager
             while (_expectedCommand < ServerCommand.SplitFinal)
             {
                 _expectedCommand++;
-                await _socket.SendAsync(SkipMessage, SocketFlags.None);
+                await _streamWriter.WriteAsync(SkipMessage, token);
             }
 
             if (Plugin.UseInGameTime)
             {
                 var text = TimeToSync.ToString(CultureInfo.InvariantCulture);
                 Plugin.Log($"Final Split: {text}");
-                FinalSplitMessage[^2] = Encoding.ASCII.GetBytes(text);
-                await _socket.SendAsync(FinalSplitMessage, SocketFlags.None);
+                FinalSplitMessage[^2] = text;
+                await _streamWriter.WriteAsync(string.Join("", FinalSplitMessage));
             }
             else
             {
-                await _socket.SendAsync(SplitMessage, SocketFlags.None);
+                await _streamWriter.WriteAsync(SplitMessage, token);
             }
 
-            await _socket.SendAsync(GetCurrentTimerPhase, SocketFlags.None);
+            await _streamWriter.WriteAsync(GetCurrentTimerPhase, token);
         }
         finally
         {
@@ -247,22 +256,22 @@ public static class SocketManager
         }
     }
 
-    private static async void ResetIfRunningOrPaused()
+    private static async void ResetIfRunningOrPaused(CancellationToken token)
     {
         // Plugin.Log($"Maybe sending reset");
         _communicating = true;
         _timerPhase = TimerPhase.None;
         try
         {
-            await _socket.SendAsync(GetCurrentTimerPhase, SocketFlags.None);
+            await _streamWriter.WriteAsync(GetCurrentTimerPhase, token);
             while (_timerPhase == TimerPhase.None)
             {
-                await Task.Yield();
+                await Task.Delay(1);
             }
 
             if (_timerPhase is TimerPhase.Running or TimerPhase.Paused)
             {
-                await _socket.SendAsync(Reset, SocketFlags.None);
+                await _streamWriter.WriteAsync(Reset, token);
             }
         }
         finally
@@ -271,12 +280,11 @@ public static class SocketManager
         }
     }
 
-    private static async void ReadMessagesLoop(Socket socket)
+    private static async void ReadMessagesLoop(StreamReader reader)
     {
-        using var streamReader = new StreamReader(new NetworkStream(socket, false));
-        while (socket.Connected)
+        while (reader.BaseStream.CanRead)
         {
-            var text = await streamReader.ReadLineAsync();
+            var text = await reader.ReadLineAsync();
 
             if (text.Length <= 0)
             {
