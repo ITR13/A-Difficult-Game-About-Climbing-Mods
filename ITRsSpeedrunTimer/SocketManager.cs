@@ -204,7 +204,7 @@ public static class SocketManager
     {
         if (_communicating)
         {
-            Plugin.Log($"Wanting to send {command}, but waiting for communication to finish");
+            //Plugin.Log($"Wanting to send {command}, but waiting for communication to finish");
 
             var startTime = DateTime.Now.Ticks;
             while (_communicating)
@@ -219,7 +219,7 @@ public static class SocketManager
             }
         }
 
-        Plugin.Log($"Sending {command}, expecting {_expectedCommand}");
+        //Plugin.Log($"Sending {command}, expecting {_expectedCommand}");
         _communicating = true;
 
         var tokenSource = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
@@ -288,7 +288,6 @@ public static class SocketManager
         else if (Plugin.UseInGameTime)
         {
             var text = time.ToString(CultureInfo.InvariantCulture);
-            Plugin.Log($"Split: {text}");
             SplitWithTimeMessage[^2] = text;
             await WriteAsync(new ReadOnlyMemory<char>(string.Join("", SplitWithTimeMessage).ToCharArray()), token);
         }
@@ -355,6 +354,7 @@ public static class SocketManager
     private static async Task WriteAsync(ReadOnlyMemory<char> toWrite, CancellationToken token)
     {
         await _streamWriter.WriteAsync(toWrite, token);
+        // ReSharper disable once MethodHasAsyncOverload
         _streamWriter.Flush();
     }
 
@@ -362,9 +362,9 @@ public static class SocketManager
     {
         while (!token.IsCancellationRequested && stream.IsConnected)
         {
-            Plugin.Log("Waiting for text...");
+            //Plugin.Log("Waiting for text...");
             var text = await _streamReader.ReadLineAsync();
-            Plugin.Log($"Read `{text}`");
+            //Plugin.Log($"Read `{text}`");
             if (string.IsNullOrEmpty(text))
             {
                 continue;
