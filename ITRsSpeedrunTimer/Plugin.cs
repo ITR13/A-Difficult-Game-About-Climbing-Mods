@@ -134,15 +134,11 @@ public class Plugin : BaseUnityPlugin
         _leftArm = climber.arm_Left;
         _rightArm = climber.arm_Right;
 
-        if (_currentPhase != ServerCommand.Reset)
-        {
-            // If the current phase is reset, the player completed a run
-            SocketManager.Command(ServerCommand.Reset, 0);
-        }
-        else
-        {
-            SocketManager.Command(ServerCommand.UpdateStatus, 0);
-        }
+        // If the current phase is reset, the player completed a run
+        SocketManager.Command(
+            _currentPhase != ServerCommand.Reset ? ServerCommand.Reset : ServerCommand.UpdateStatus,
+            0
+        );
 
         _currentPhase = ServerCommand.StartTimer;
     }
