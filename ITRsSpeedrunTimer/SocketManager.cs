@@ -99,7 +99,7 @@ public static class SocketManager
             }
 
             if (token.IsCancellationRequested) return;
-            _ = ReadMessagesLoop(token);
+            _ = ReadMessagesLoop(token, _stream);
 
             CommandQueue.Clear();
             while (!token.IsCancellationRequested && _stream.IsConnected)
@@ -122,18 +122,21 @@ public static class SocketManager
             }
 
             Plugin.Log("Attempting to close stream...");
-
-            // _stream.ReadTimeout = 1;
-            _streamWriter.Close();
-            _streamReader.Close();
-            _stream.Close();
-
-            Plugin.Log("Closed communications with server");
+            _ = PleaseCloseOrCauseAMemoryLeakIDontCareAtThisPoint(_stream, _streamWriter, _streamReader);
         }
     }
 
     public static float? SyncTime { private get; set; }
     private static readonly Queue<(ServerCommand, float)> CommandQueue = new();
+
+    private static async Task PleaseCloseOrCauseAMemoryLeakIDontCareAtThisPoint(NamedPipeClientStream stream, StreamWriter streamWriter, StreamReader streamReader)
+    {
+        await Task.Yield();
+        await streamWriter.DisposeAsync();
+        streamReader.Dispose();
+        stream.ReadTimeout = 1;
+        await stream.DisposeAsync();
+    }
 
     public static void Command(ServerCommand command, float time)
     {
@@ -164,6 +167,8 @@ public static class SocketManager
 
                 if (token.IsCancellationRequested) return;
                 _stream.ReadMode = PipeTransmissionMode.Byte;
+
+                await _stream.WriteAsync("getcurrenttimerphas\ngetcurrentsplitname"u8.ToArray(), token);
 
                 _streamWriter = new StreamWriter(_stream, Encoding.UTF8, 1024, true);
                 _streamReader = new StreamReader(_stream, Encoding.UTF8, false, 1024, true);
@@ -350,17 +355,19 @@ public static class SocketManager
     private static async Task WriteAsync(ReadOnlyMemory<char> toWrite, CancellationToken token)
     {
         await _streamWriter.WriteAsync(toWrite, token);
-        await _stream.FlushAsync(token);
+        _streamWriter.Flush();
     }
 
-    private static async Task ReadMessagesLoop(CancellationToken token)
+    private static async Task ReadMessagesLoop(CancellationToken token, NamedPipeClientStream stream)
     {
-        while (!token.IsCancellationRequested)
+        while (!token.IsCancellationRequested && stream.IsConnected)
         {
+            Plugin.Log("Waiting for text...");
             var text = await _streamReader.ReadLineAsync();
+            Plugin.Log($"Read `{text}`");
             if (string.IsNullOrEmpty(text))
             {
-                break;
+                continue;
             }
 
             if (text.Length <= 3 && text[0] == '-')
