@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Threading;
 using BepInEx;
 using BepInEx.Bootstrap;
 using BepInEx.Configuration;
@@ -28,21 +27,16 @@ public class Plugin : BaseUnityPlugin
 
     private Body _body;
     private ArmScript_v2 _leftArm, _rightArm;
-    private float _syncTimer;
 
     private ServerCommand _currentPhase;
-    private CancellationTokenSource _cancellationTokenSource = new();
     private GUIStyle _modlistStyle, _errorStyle;
 
     private string _errorString;
     private float _errorTimer;
 
     private ConfigEntry<bool> _useServer, _useInGameTime, _showModList;
-    private static ConfigEntry<string> _socketAddress;
-    private static ConfigEntry<int> _socketPort;
 
-    public static string SocketAddress => _socketAddress.Value;
-    public static int SocketPort => _socketPort.Value;
+    private int _waitToUpdateTimer = 0;
 
     private void Awake()
     {
@@ -67,19 +61,6 @@ public class Plugin : BaseUnityPlugin
             "Show Mod List",
             true,
             "Shows a list of installed mods in the top left courner of the screen"
-        );
-
-        _socketAddress = Config.Bind(
-            "Sockets",
-            "Socket Address",
-            "localhost",
-            "What address the livesplit server is on. If you're uisng it on the same computer then just leave this at localhost."
-        );
-        _socketPort = Config.Bind(
-            "Sockets",
-            "Socket Port",
-            16834,
-            "What port the livesplit server is on."
         );
 
         UseServer = _useServer.Value;
@@ -118,31 +99,33 @@ public class Plugin : BaseUnityPlugin
         SaveSystemJTimePatch.OnGameWon += timeCompleted =>
         {
             if (!UseInGameTime || !_useServer.Value) return;
-            SocketManager.TimeToSync = timeCompleted;
-            SocketManager.Commands.Enqueue(ServerCommand.SplitFinal);
+            SocketManager.Command(ServerCommand.SplitFinal, timeCompleted);
         };
 
         PauseMenuPatch.OnPause += (paused) =>
         {
             if (!UseInGameTime || !_useServer.Value) return;
-            SocketManager.Commands.Enqueue(paused ? ServerCommand.Pause : ServerCommand.Unpause);
-            SocketManager.TimeToSync = (Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime);
+            SocketManager.Command(
+                paused ? ServerCommand.Pause : ServerCommand.Unpause,
+                Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime
+            );
         };
 
         PauseMenuPatch.OnStartTimer += () =>
         {
             if (!UseInGameTime || !_useServer.Value) return;
-            SocketManager.Commands.Enqueue(ServerCommand.StartTimer);
-            SocketManager.TimeToSync = (Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime);
+            SocketManager.Command(
+                ServerCommand.StartTimer,
+                Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime
+            );
         };
 
-        var thread = new Thread(() => { SocketManager.ThreadedLoop(_cancellationTokenSource.Token); });
-        thread.Start();
+        SocketManager.Start();
     }
 
     private void OnDestroy()
     {
-        _cancellationTokenSource.Cancel();
+        SocketManager.Stop();
     }
 
     private void OnClimberSpawned(ClimberMain climber)
@@ -154,12 +137,11 @@ public class Plugin : BaseUnityPlugin
         if (_currentPhase != ServerCommand.Reset)
         {
             // If the current phase is reset, the player completed a run
-            SocketManager.Commands.Clear();
-            SocketManager.Commands.Enqueue(ServerCommand.Reset);
+            SocketManager.Command(ServerCommand.Reset, 0);
         }
         else
         {
-            SocketManager.Commands.Enqueue(ServerCommand.UpdateStatus);
+            SocketManager.Command(ServerCommand.UpdateStatus, 0);
         }
 
         _currentPhase = ServerCommand.StartTimer;
@@ -168,17 +150,6 @@ public class Plugin : BaseUnityPlugin
     private void FixedUpdate()
     {
         if (!_useServer.Value || _body == null) return;
-        // Reset phase means we've won
-        if (_currentPhase != ServerCommand.Reset)
-        {
-            _syncTimer -= Time.fixedDeltaTime;
-            if (_syncTimer < 0)
-            {
-                _syncTimer += 5;
-                SocketManager.TimeToSync =
-                    Mathf.Round((Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime) * 1000) / 1000;
-            }
-        }
 
         var y = _body.transform.position.y;
         var inWater = _body.isInWater;
@@ -198,6 +169,7 @@ public class Plugin : BaseUnityPlugin
             highestGrabbedY = Mathf.Max(_rightArm.grabbedSurface.transform.position.y, highestGrabbedY);
         }
 
+        var time = Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime;
         switch (_currentPhase)
         {
             case ServerCommand.StartTimer:
@@ -205,7 +177,7 @@ public class Plugin : BaseUnityPlugin
                 {
                     if (!UseInGameTime)
                     {
-                        SocketManager.Commands.Enqueue(ServerCommand.StartTimer);
+                        SocketManager.Command(ServerCommand.StartTimer, time);
                     }
 
                     _currentPhase = ServerCommand.SplitIntro;
@@ -216,7 +188,7 @@ public class Plugin : BaseUnityPlugin
             case ServerCommand.SplitIntro:
                 if (highestGrabbedY > 33)
                 {
-                    SocketManager.Commands.Enqueue(ServerCommand.SplitIntro);
+                    SocketManager.Command(ServerCommand.SplitIntro, time);
                     _currentPhase = ServerCommand.SplitJungle;
                     break;
                 }
@@ -225,7 +197,7 @@ public class Plugin : BaseUnityPlugin
             case ServerCommand.SplitJungle:
                 if (highestGrabbedY > 60)
                 {
-                    SocketManager.Commands.Enqueue(ServerCommand.SplitJungle);
+                    SocketManager.Command(ServerCommand.SplitJungle, time);
                     _currentPhase = ServerCommand.SplitGears;
                     break;
                 }
@@ -234,7 +206,7 @@ public class Plugin : BaseUnityPlugin
             case ServerCommand.SplitGears:
                 if (inWater && y > 83)
                 {
-                    SocketManager.Commands.Enqueue(ServerCommand.SplitGears);
+                    SocketManager.Command(ServerCommand.SplitGears, time);
                     _currentPhase = ServerCommand.SplitPool;
                     break;
                 }
@@ -243,7 +215,7 @@ public class Plugin : BaseUnityPlugin
             case ServerCommand.SplitPool:
                 if (highestGrabbedY > 112)
                 {
-                    SocketManager.Commands.Enqueue(ServerCommand.SplitPool);
+                    SocketManager.Command(ServerCommand.SplitPool, time);
                     _currentPhase = ServerCommand.SplitConstruction;
                     break;
                 }
@@ -252,7 +224,7 @@ public class Plugin : BaseUnityPlugin
             case ServerCommand.SplitConstruction:
                 if (highestGrabbedY > 137)
                 {
-                    SocketManager.Commands.Enqueue(ServerCommand.SplitConstruction);
+                    SocketManager.Command(ServerCommand.SplitConstruction, time);
                     _currentPhase = ServerCommand.SplitCave;
                     break;
                 }
@@ -261,7 +233,7 @@ public class Plugin : BaseUnityPlugin
             case ServerCommand.SplitCave:
                 if (highestGrabbedY > 154)
                 {
-                    SocketManager.Commands.Enqueue(ServerCommand.SplitCave);
+                    SocketManager.Command(ServerCommand.SplitCave, time);
                     _currentPhase = ServerCommand.SplitIce;
                     break;
                 }
@@ -270,7 +242,7 @@ public class Plugin : BaseUnityPlugin
             case ServerCommand.SplitIce:
                 if (highestGrabbedY > 207)
                 {
-                    SocketManager.Commands.Enqueue(ServerCommand.SplitIce);
+                    SocketManager.Command(ServerCommand.SplitIce, time);
                     _currentPhase = ServerCommand.SplitFinal;
                     break;
                 }
@@ -281,7 +253,7 @@ public class Plugin : BaseUnityPlugin
                 {
                     if (!UseInGameTime)
                     {
-                        SocketManager.Commands.Enqueue(ServerCommand.SplitFinal);
+                        SocketManager.Command(ServerCommand.SplitFinal, time);
                     }
 
                     _currentPhase = ServerCommand.Reset;
@@ -293,7 +265,24 @@ public class Plugin : BaseUnityPlugin
 
     private void Update()
     {
+        if (Input.GetKeyDown(KeyCode.U))
+        {
+            SocketManager.Command(ServerCommand.StartTimer, 0);
+        }
+        
         _errorTimer -= Time.unscaledDeltaTime;
+
+
+        if (_waitToUpdateTimer-- <= 0)
+        {
+            _waitToUpdateTimer += 10;
+            // Reset phase means we've won
+            if (_currentPhase != ServerCommand.Reset)
+            {
+                SocketManager.SyncTime =
+                    Mathf.Round((Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime) * 1000) / 1000;
+            }
+        }
 
         if (_body == null) return;
 

@@ -32,6 +32,9 @@
     <Reference Include="Unity.TextMeshPro">
       <HintPath>G:\SteamLibrary\steamapps\common\A Difficult Game About Climbing\A Difficult Game About Climbing_Data\Managed\Unity.TextMeshPro.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>G:\SteamLibrary\steamapps\common\A Difficult Game About Climbing\A Difficult Game About Climbing_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.UI">
       <HintPath>G:\SteamLibrary\steamapps\common\A Difficult Game About Climbing\A Difficult Game About Climbing_Data\Managed\UnityEngine.UI.dll</HintPath>
     </Reference>
