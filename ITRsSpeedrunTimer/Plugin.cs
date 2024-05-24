@@ -35,10 +35,10 @@ public class Plugin : BaseUnityPlugin
     private string _errorString;
     private float _errorTimer;
 
-    private ConfigEntry<bool> _useServer, _useInGameTime, _showModList;
+    private ConfigEntry<bool> _useServer, _useInGameTime, _showModList, _useGrabSplits;
     private ConfigEntry<string>[] _splitNames;
     public static string[] SplitNames { get; private set; }
-    
+
     private int _waitToUpdateTimer = 0;
 
     private void Awake()
@@ -65,6 +65,12 @@ public class Plugin : BaseUnityPlugin
             true,
             "Shows a list of installed mods in the top left courner of the screen"
         );
+        _useGrabSplits = Config.Bind(
+            "_Toggles",
+            "Use Grab Splits",
+            true,
+            "If true, the timer splits a section when you grab a specific object. If false, it uses the original autosplitter positions."
+        );
 
         var defaultSplits = new[] { "Intro", "Jungle", "Gears", "Pool", "Construction", "Cave", "Ice", "Ending" };
         _splitNames = defaultSplits
@@ -75,10 +81,7 @@ public class Plugin : BaseUnityPlugin
         {
             var index = i;
             SplitNames[i] = _splitNames[i].Value;
-            _splitNames[i].SettingChanged += (_, _) =>
-            {
-                SplitNames[index] = _splitNames[index].Value;
-            };
+            _splitNames[i].SettingChanged += (_, _) => { SplitNames[index] = _splitNames[index].Value; };
         }
 
         UseServer = _useServer.Value;
@@ -183,6 +186,9 @@ public class Plugin : BaseUnityPlugin
             highestGrabbedY = Mathf.Max(_rightArm.grabbedSurface.transform.position.y, highestGrabbedY);
         }
 
+        var splitPos = _body.transform.position;
+        var grabSplit = _useGrabSplits.Value;
+
         var time = Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime;
         switch (_currentPhase)
         {
@@ -200,7 +206,8 @@ public class Plugin : BaseUnityPlugin
 
                 goto case ServerCommand.SplitIntro;
             case ServerCommand.SplitIntro:
-                if (highestGrabbedY > 33)
+                var split = grabSplit ? highestGrabbedY > 33 : splitPos is { y: > 31 };
+                if (split)
                 {
                     SocketManager.Command(ServerCommand.SplitIntro, time);
                     _currentPhase = ServerCommand.SplitJungle;
@@ -209,7 +216,8 @@ public class Plugin : BaseUnityPlugin
 
                 goto case ServerCommand.SplitJungle;
             case ServerCommand.SplitJungle:
-                if (highestGrabbedY > 60)
+                split = grabSplit ? highestGrabbedY > 60 : splitPos is { y: > 55, x: < 0 };
+                if (split)
                 {
                     SocketManager.Command(ServerCommand.SplitJungle, time);
                     _currentPhase = ServerCommand.SplitGears;
@@ -218,7 +226,8 @@ public class Plugin : BaseUnityPlugin
 
                 goto case ServerCommand.SplitGears;
             case ServerCommand.SplitGears:
-                if (inWater && y > 83)
+                split = grabSplit ? inWater && y > 83 : splitPos is { y: > 80f and < 87, x: > 8f };
+                if (split)
                 {
                     SocketManager.Command(ServerCommand.SplitGears, time);
                     _currentPhase = ServerCommand.SplitPool;
@@ -227,7 +236,8 @@ public class Plugin : BaseUnityPlugin
 
                 goto case ServerCommand.SplitPool;
             case ServerCommand.SplitPool:
-                if (highestGrabbedY > 112)
+                split = grabSplit ? highestGrabbedY > 112 : splitPos is { y: > 109, x: < 20 };
+                if (split)
                 {
                     SocketManager.Command(ServerCommand.SplitPool, time);
                     _currentPhase = ServerCommand.SplitConstruction;
@@ -236,7 +246,8 @@ public class Plugin : BaseUnityPlugin
 
                 goto case ServerCommand.SplitConstruction;
             case ServerCommand.SplitConstruction:
-                if (highestGrabbedY > 137)
+                split = grabSplit ? highestGrabbedY > 137 : splitPos is { y: > 135 };
+                if (split)
                 {
                     SocketManager.Command(ServerCommand.SplitConstruction, time);
                     _currentPhase = ServerCommand.SplitCave;
@@ -245,7 +256,8 @@ public class Plugin : BaseUnityPlugin
 
                 goto case ServerCommand.SplitCave;
             case ServerCommand.SplitCave:
-                if (highestGrabbedY > 154)
+                split = grabSplit ? highestGrabbedY > 154 : splitPos is { y: > 152 };
+                if (split)
                 {
                     SocketManager.Command(ServerCommand.SplitCave, time);
                     _currentPhase = ServerCommand.SplitIce;
@@ -254,7 +266,8 @@ public class Plugin : BaseUnityPlugin
 
                 goto case ServerCommand.SplitIce;
             case ServerCommand.SplitIce:
-                if (highestGrabbedY > 207)
+                split = grabSplit ? highestGrabbedY > 207 : splitPos is { y: > 204, x: < 47 };
+                if (split)
                 {
                     SocketManager.Command(ServerCommand.SplitIce, time);
                     _currentPhase = ServerCommand.SplitFinal;
