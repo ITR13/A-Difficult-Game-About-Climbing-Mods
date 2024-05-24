@@ -375,11 +375,12 @@ public static class SocketManager
                 continue;
             }
 
-            switch (text.Trim())
+            var trimmedText = text.Trim();
+            switch (trimmedText)
             {
                 case "-":
                     break;
-                case "Intro":
+                /*case "Intro":
                     _expectedCommand = ServerCommand.SplitIntro;
                     break;
                 case "Jungle":
@@ -402,7 +403,7 @@ public static class SocketManager
                     break;
                 case "Ending":
                     _expectedCommand = ServerCommand.SplitFinal;
-                    break;
+                    break;*/
                 case "Running":
                     _timerPhase = TimerPhase.Running;
                     break;
@@ -417,6 +418,12 @@ public static class SocketManager
                     break;
                 default:
                     _expectedCommand = ServerCommand.SplitFinal;
+                    for (var i = 0; i < Plugin.SplitNames.Length; i++)
+                    {
+                        if (Plugin.SplitNames[i] != trimmedText) continue;
+                        _expectedCommand = ServerCommand.SplitIntro + i;
+                        break;
+                    }
                     break;
             }
         }

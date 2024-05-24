@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using BepInEx;
 using BepInEx.Bootstrap;
@@ -35,7 +36,9 @@ public class Plugin : BaseUnityPlugin
     private float _errorTimer;
 
     private ConfigEntry<bool> _useServer, _useInGameTime, _showModList;
-
+    private ConfigEntry<string>[] _splitNames;
+    public static string[] SplitNames { get; private set; }
+    
     private int _waitToUpdateTimer = 0;
 
     private void Awake()
@@ -62,6 +65,21 @@ public class Plugin : BaseUnityPlugin
             true,
             "Shows a list of installed mods in the top left courner of the screen"
         );
+
+        var defaultSplits = new[] { "Intro", "Jungle", "Gears", "Pool", "Construction", "Cave", "Ice", "Ending" };
+        _splitNames = defaultSplits
+            .Select((value, index) => Config.Bind("Splits", value, value, $"The name of split #{index}"))
+            .ToArray();
+        SplitNames = defaultSplits;
+        for (var i = 0; i < _splitNames.Length; i++)
+        {
+            var index = i;
+            SplitNames[i] = _splitNames[i].Value;
+            _splitNames[i].SettingChanged += (_, _) =>
+            {
+                SplitNames[index] = _splitNames[index].Value;
+            };
+        }
 
         UseServer = _useServer.Value;
         _useServer.SettingChanged += (_, _) => UseServer = _useServer.Value;
@@ -265,7 +283,7 @@ public class Plugin : BaseUnityPlugin
         {
             SocketManager.Command(ServerCommand.StartTimer, 0);
         }
-        
+
         _errorTimer -= Time.unscaledDeltaTime;
 
 
