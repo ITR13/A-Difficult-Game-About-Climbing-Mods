@@ -277,7 +277,6 @@ public class Plugin : BaseUnityPlugin
         RecordingStuff();
         QuickSaveStuff();
         TeleportStuff();
-        RestartStuff();
     }
 
     private void FixedUpdate()
@@ -311,25 +310,6 @@ public class Plugin : BaseUnityPlugin
             _hovering = 1.5f;
             return;
         }
-    }
-
-    private void RestartStuff()
-    {
-        if (!Input.GetKeyDown(KeyCode.B)) return;
-        StartCoroutine(RestartRoutine());
-    }
-
-    private IEnumerator RestartRoutine()
-    {
-        if (PauseMenu.GameIsPaused)
-        {
-            var pauseMenu = FindObjectOfType<PauseMenu>(true);
-            pauseMenu.ResumeGame();
-        }
-
-        yield return new WaitForFixedUpdate();
-        SaveSystemJ.NewGame(true);
-        SceneManager.LoadScene(0);
     }
 
     private void FlyStuff()
