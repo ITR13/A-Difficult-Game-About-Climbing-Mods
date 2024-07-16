@@ -266,9 +266,20 @@ public static class SocketManager
                         if (_expectedCommand == ServerCommand.StartTimer)
                         {
                             await RunSplit(ServerCommand.StartTimer, 0, token);
+                            _expectedCommand++;
                         }
 
-                        while (_expectedCommand <= command)
+                        if (Plugin.UseInGameTime)
+                        {
+                            var text = time.ToString(CultureInfo.InvariantCulture);
+                            SplitWithTimeMessage[^2] = text;
+                            await WriteAsync(
+                                new ReadOnlyMemory<char>(string.Join("", SplitWithTimeMessage).ToCharArray()),
+                                token
+                            );
+                        }
+
+                        while (_expectedCommand < command)
                         {
                             await RunSkip(token);
                         }
