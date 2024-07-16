@@ -15,8 +15,9 @@ namespace ITRsBetterFps;
 public class Plugin : BaseUnityPlugin
 {
     private ConfigEntry<bool> _disableFog;
-    private ConfigEntry<bool> _disableWaterfallEdge, _disableWaterfallSteam;
+    private ConfigEntry<bool> _disableWaterfallEdge, _disableWaterfallSteam, _disableForegroundParticles;
     private ConfigEntry<bool> _disableForegroundFoliage, _disableBackgroundFoliage, _disableBackgroundRocks;
+    private ConfigEntry<bool> _disableBackgroundCamera, _disableForegroundCamera, _useSkyboxForBg;
 
     private void Awake()
     {
@@ -41,6 +42,13 @@ public class Plugin : BaseUnityPlugin
             "Disables the steam in waterfalls"
         );
 
+        _disableForegroundParticles = Config.Bind(
+            "_Toggles",
+            "Disable Foreground Particles",
+            true,
+            "Disables various particles"
+        );
+
         _disableBackgroundFoliage = Config.Bind(
             "_Toggles",
             "Disable Background Foliage",
@@ -62,6 +70,26 @@ public class Plugin : BaseUnityPlugin
             "Disables rocks in the background"
         );
 
+        _disableForegroundCamera = Config.Bind(
+            "_Toggles",
+            "Disable Foreground Canera",
+            false,
+            "Disables the entire foreground camera"
+        );
+
+        _disableBackgroundCamera = Config.Bind(
+            "_Toggles",
+            "Disable Background Camera",
+            false,
+            "Disables the entire background camera. NB: This is a huge change and makes the game very different!"
+        );
+        _useSkyboxForBg = Config.Bind(
+            "_Toggles",
+            "SkyboxAsBg",
+            false,
+            "When the background camera is disabled, the background will be the skybox and the water graphics will be disabled. NB: This makes some vital objects invisible!"
+        );
+
         SceneManager.sceneLoaded += (_, _) => OptimizeScene();
         OptimizeScene();
     }
@@ -69,10 +97,14 @@ public class Plugin : BaseUnityPlugin
 
     private void OptimizeScene()
     {
+        if (Camera.main == null) return;
+
         Logger.LogInfo("Optimizing scene...");
         DisableVolumetricFog();
         DisableWatefallStuff();
         DisableRenderers();
+        DisableParticles();
+        DisableCameras();
     }
 
     private void DisableWatefallStuff()
@@ -85,6 +117,40 @@ public class Plugin : BaseUnityPlugin
 
         if (_disableWaterfallEdge.Value) FindAndDisable("WaterfallEdge");
     }
+
+    private void DisableParticles()
+    {
+        if (!_disableForegroundParticles.Value) return;
+        FindAndDisable("ForeGroundParticle_Rain");
+        FindAndDisable("ForeGroundParticle_Jungle");
+        FindAndDisable("ForeGroundParticle_Park");
+        FindAndDisable("ForeGroundParticle_SnowLight");
+        FindAndDisable("ForeGroundParticle_SnowMedium");
+        FindAndDisable("ForeGroundParticle_SnowHeavy");
+    }
+
+    private void DisableCameras()
+    {
+        if (_disableForegroundCamera.Value)
+        {
+            FindAndDisable("ForegroundCamera");
+        }
+
+        if (!_disableBackgroundCamera.Value) return;
+        FindAndDisable("BackgroundCamera");
+
+        var mainCamera = Camera.main;
+        if (!_useSkyboxForBg.Value)
+        {
+            mainCamera.clearFlags = CameraClearFlags.Color;
+            mainCamera.backgroundColor = new Color(0.75f, 0.75f, 0.75f);
+            return;
+        }
+        
+        
+        mainCamera.clearFlags = CameraClearFlags.Skybox;
+    }
+
 
     private void FindAndDisable(string goName)
     {
