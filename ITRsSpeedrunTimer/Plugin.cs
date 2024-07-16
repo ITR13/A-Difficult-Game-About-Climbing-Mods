@@ -79,7 +79,7 @@ public class Plugin : BaseUnityPlugin
         _threadSleepTime = Config.Bind(
             "Other",
             "Thread Sleep Time",
-            1,
+            16,
             "How often the thread that communicates with livesplit updates (ms)"
         );
 
