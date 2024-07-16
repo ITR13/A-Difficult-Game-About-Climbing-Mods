@@ -159,7 +159,6 @@ public static class SocketManager
         while (!token.IsCancellationRequested)
         {
             Plugin.Log($"Attempting to connect to LiveSplit...");
-            Plugin.LogError($"Attempting to connect to LiveSplit...");
             try
             {
                 _stream = new NamedPipeClientStream(
