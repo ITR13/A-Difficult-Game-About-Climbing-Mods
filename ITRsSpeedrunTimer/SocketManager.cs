@@ -70,7 +70,7 @@ public static class SocketManager
                 for (var i = 0; i < 1000; i++)
                 {
                     if (!thread.IsAlive) break;
-                    Thread.Sleep(1);
+                    Thread.Sleep(Plugin.ThreadSleepTime);
                 }
 
                 if (thread.IsAlive)
@@ -115,7 +115,7 @@ public static class SocketManager
                 }
                 else
                 {
-                    Thread.Sleep(1);
+                    Thread.Sleep(Plugin.ThreadSleepTime);
                 }
 
                 await Task.Yield();

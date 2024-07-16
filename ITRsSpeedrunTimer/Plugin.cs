@@ -24,6 +24,8 @@ public class Plugin : BaseUnityPlugin
     public static bool UseInGameTime { get; private set; }
     public static bool UseServer { get; private set; }
 
+    public static int ThreadSleepTime { get; private set; }
+
     private List<string> _text = new List<string>();
 
     private Body _body;
@@ -36,6 +38,7 @@ public class Plugin : BaseUnityPlugin
     private float _errorTimer;
 
     private ConfigEntry<bool> _useServer, _useInGameTime, _showModList, _useGrabSplits;
+    private ConfigEntry<int> _threadSleepTime;
     private ConfigEntry<string>[] _splitNames;
     public static string[] SplitNames { get; private set; }
 
@@ -73,6 +76,13 @@ public class Plugin : BaseUnityPlugin
             "If true, the timer splits a section when you grab a specific object. If false, it uses the original autosplitter positions."
         );
 
+        _threadSleepTime = Config.Bind(
+            "Other",
+            "Thread Sleep Time",
+            1,
+            "How often the thread that communicates with livesplit updates (ms)"
+        );
+
         var defaultSplits = new[] { "Intro", "Jungle", "Gears", "Pool", "Construction", "Cave", "Ice", "Ending" };
         _splitNames = defaultSplits
             .Select((value, index) => Config.Bind("Splits", value, value, $"The name of split #{index}"))
@@ -89,6 +99,9 @@ public class Plugin : BaseUnityPlugin
         _useServer.SettingChanged += (_, _) => UseServer = _useServer.Value;
         UseInGameTime = _useInGameTime.Value;
         _useInGameTime.SettingChanged += (_, _) => UseInGameTime = _useInGameTime.Value;
+
+        ThreadSleepTime = Mathf.Max(1, _threadSleepTime.Value);
+        _threadSleepTime.SettingChanged += (_, _) => ThreadSleepTime = Mathf.Max(1, _threadSleepTime.Value);
 
         _modlistStyle = new GUIStyle
         {
