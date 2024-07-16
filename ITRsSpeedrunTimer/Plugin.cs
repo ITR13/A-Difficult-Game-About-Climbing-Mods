@@ -220,52 +220,57 @@ public class Plugin : BaseUnityPlugin
 
             _currentPhase = ServerCommand.Reset;
         }
-        else if (grabSplit
+        else if ((grabSplit
                      ? highestGrabbedY > 207
-                     : splitPos is { y: > 204, x: < 47 } && _currentPhase < ServerCommand.SplitFinal)
+                     : splitPos is { y: > 204, x: < 47 }) &&
+                 _currentPhase < ServerCommand.SplitFinal)
         {
             SocketManager.Command(ServerCommand.SplitIce, time, _skipMode-- > 0);
             _currentPhase = ServerCommand.SplitFinal;
         }
-        else if (grabSplit ? highestGrabbedY > 154 : splitPos is { y: > 152 } && _currentPhase < ServerCommand.SplitIce)
+        else if ((grabSplit ? highestGrabbedY > 154 : splitPos is { y: > 152 }) &&
+                 _currentPhase < ServerCommand.SplitIce)
         {
             SocketManager.Command(ServerCommand.SplitCave, time, _skipMode-- > 0);
             _currentPhase = ServerCommand.SplitIce;
         }
-        else if (grabSplit
+        else if ((grabSplit
                      ? highestGrabbedY > 137
-                     : splitPos is { y: > 135 } && _currentPhase < ServerCommand.SplitCave)
+                     : splitPos is { y: > 135 }) &&
+                 _currentPhase < ServerCommand.SplitCave)
         {
             SocketManager.Command(ServerCommand.SplitConstruction, time, _skipMode-- > 0);
             _currentPhase = ServerCommand.SplitCave;
         }
-        else if (grabSplit
+        else if ((grabSplit
                      ? highestGrabbedY > 112
-                     : splitPos is { y: > 109, x: < 20 } && _currentPhase < ServerCommand.SplitConstruction)
+                     : splitPos is { y: > 109, x: < 20 }) &&
+                 _currentPhase < ServerCommand.SplitConstruction)
         {
             SocketManager.Command(ServerCommand.SplitPool, time, _skipMode-- > 0);
             _currentPhase = ServerCommand.SplitConstruction;
         }
-        else if (grabSplit
+        else if ((grabSplit
                      ? inWater && y > 83
-                     : splitPos is { y: > 80f and < 87, x: > 8f } && _currentPhase < ServerCommand.SplitPool)
+                     : splitPos is { y: > 80f and < 87, x: > 8f }) &&
+                 _currentPhase < ServerCommand.SplitPool)
         {
             SocketManager.Command(ServerCommand.SplitGears, time, _skipMode-- > 0);
             _currentPhase = ServerCommand.SplitPool;
         }
-        else if (grabSplit
+        else if ((grabSplit
                      ? highestGrabbedY > 60
-                     : splitPos is { y: > 55, x: < 0 } ||
-                       splitPos is { y: > 60, x: > 0 } && _currentPhase < ServerCommand.SplitGears)
+                     : splitPos is { y: > 55, x: < 0 } or { y: > 60, x: > 0 }) &&
+                 _currentPhase < ServerCommand.SplitGears)
         {
             SocketManager.Command(ServerCommand.SplitJungle, time, _skipMode-- > 0);
             _currentPhase = ServerCommand.SplitGears;
         }
-        else if (grabSplit
+        else if ((grabSplit
                      ? highestGrabbedY > 33
-                     : splitPos is { y: > 31 } &&
-                       _currentPhase < ServerCommand.SplitJungle &&
-                       (_skipMode <= 0 || splitPos.x > 0))
+                     : splitPos is { y: > 31 }) &&
+                 _currentPhase < ServerCommand.SplitJungle &&
+                 (_skipMode <= 0 || splitPos.x > 0))
         {
             SocketManager.Command(ServerCommand.SplitIntro, time, _skipMode-- > 0);
             _currentPhase = ServerCommand.SplitJungle;
