@@ -242,14 +242,17 @@ public class Plugin : BaseUnityPlugin
         }
         else if (grabSplit
                      ? highestGrabbedY > 60
-                     : splitPos is { y: > 55, x: < 0 } && _currentPhase < ServerCommand.SplitGears)
+                     : splitPos is { y: > 55, x: < 0 } ||
+                       splitPos is { y: > 60, x: > 0 } && _currentPhase < ServerCommand.SplitGears)
         {
             SocketManager.Command(ServerCommand.SplitJungle, time, _skipMode-- > 0);
             _currentPhase = ServerCommand.SplitGears;
         }
         else if (grabSplit
                      ? highestGrabbedY > 33
-                     : splitPos is { y: > 31 } && _currentPhase < ServerCommand.SplitJungle && (_skipMode <= 0 || splitPos.x > 0))
+                     : splitPos is { y: > 31 } &&
+                       _currentPhase < ServerCommand.SplitJungle &&
+                       (_skipMode <= 0 || splitPos.x > 0))
         {
             SocketManager.Command(ServerCommand.SplitIntro, time, _skipMode-- > 0);
             _currentPhase = ServerCommand.SplitJungle;
