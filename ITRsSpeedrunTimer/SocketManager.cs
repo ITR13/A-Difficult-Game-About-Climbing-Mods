@@ -106,7 +106,7 @@ public static class SocketManager
             {
                 if (CommandQueue.TryDequeue(out var result))
                 {
-                    Command_Internal(result.Item1, result.Item2, token);
+                    Command_Internal(result.Item1, result.Item2, result.Item3, token);
                 }
                 else if (SyncTime != null)
                 {
@@ -127,9 +127,13 @@ public static class SocketManager
     }
 
     public static float? SyncTime { private get; set; }
-    private static readonly Queue<(ServerCommand, float)> CommandQueue = new();
+    private static readonly Queue<(ServerCommand, float, bool)> CommandQueue = new();
 
-    private static async Task PleaseCloseOrCauseAMemoryLeakIDontCareAtThisPoint(NamedPipeClientStream stream, StreamWriter streamWriter, StreamReader streamReader)
+    private static async Task PleaseCloseOrCauseAMemoryLeakIDontCareAtThisPoint(
+        NamedPipeClientStream stream,
+        StreamWriter streamWriter,
+        StreamReader streamReader
+    )
     {
         await Task.Yield();
         await streamWriter.DisposeAsync();
@@ -138,9 +142,9 @@ public static class SocketManager
         await stream.DisposeAsync();
     }
 
-    public static void Command(ServerCommand command, float time)
+    public static void Command(ServerCommand command, float time, bool skip = false)
     {
-        CommandQueue.Enqueue((command, time));
+        CommandQueue.Enqueue((command, time, skip));
     }
 
     public static void Stop()
@@ -155,6 +159,7 @@ public static class SocketManager
         while (!token.IsCancellationRequested)
         {
             Plugin.Log($"Attempting to connect to LiveSplit...");
+            Plugin.LogError($"Attempting to connect to LiveSplit...");
             try
             {
                 _stream = new NamedPipeClientStream(
@@ -200,7 +205,12 @@ public static class SocketManager
         _communicating = false;
     }
 
-    private static async void Command_Internal(ServerCommand command, float time, CancellationToken parentToken)
+    private static async void Command_Internal(
+        ServerCommand command,
+        float time,
+        bool skip,
+        CancellationToken parentToken
+    )
     {
         if (_communicating)
         {
@@ -219,7 +229,7 @@ public static class SocketManager
             }
         }
 
-        //Plugin.Log($"Sending {command}, expecting {_expectedCommand}");
+        // Plugin.Log($"Sending {command}, expecting {_expectedCommand}");
         _communicating = true;
 
         var tokenSource = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
@@ -252,8 +262,21 @@ public static class SocketManager
                 case ServerCommand.SplitConstruction:
                 case ServerCommand.SplitCave:
                 case ServerCommand.SplitIce:
-                    if (_expectedCommand <= command && _expectedCommand != ServerCommand.StartTimer)
+                    if (skip)
+                    {
+                        if (_expectedCommand == ServerCommand.StartTimer)
+                        {
+                            await RunSplit(ServerCommand.StartTimer, 0, token);
+                        }
+
+                        while (_expectedCommand <= command)
+                        {
+                            await RunSkip(token);
+                        }
+                    }
+                    else if (_expectedCommand <= command && _expectedCommand != ServerCommand.StartTimer)
                         await RunSplit(command, time, token);
+
                     break;
             }
         }
@@ -271,6 +294,12 @@ public static class SocketManager
     private static async Task RunCommand(List<string> command, CancellationToken token)
     {
         await WriteAsync(new ReadOnlyMemory<char>(string.Join("", command).ToCharArray()), token);
+    }
+
+    private static async Task RunSkip(CancellationToken token)
+    {
+        _expectedCommand++;
+        await WriteAsync(SkipMessage, token);
     }
 
     private static async Task RunSplit(ServerCommand split, float time, CancellationToken token)
@@ -314,6 +343,7 @@ public static class SocketManager
         if (_timerPhase is TimerPhase.Running or TimerPhase.Paused)
         {
             await WriteAsync(Reset, token);
+            _expectedCommand = ServerCommand.StartTimer;
         }
     }
 
@@ -329,7 +359,7 @@ public static class SocketManager
         {
             await Task.Yield();
             if (DateTime.Now.Ticks <= startTime + 10000000) continue;
-            Plugin.LogError("Failed to get split name from LiveSplit!");
+            // Plugin.LogError("Failed to get split name from LiveSplit!");
             break;
         }
     }
@@ -346,13 +376,14 @@ public static class SocketManager
         {
             await Task.Yield();
             if (DateTime.Now.Ticks <= startTime + 10000000) continue;
-            Plugin.LogError("Failed to get timerphase from LiveSplit!");
+            // Plugin.LogError("Failed to get timerphase from LiveSplit!");
             break;
         }
     }
 
     private static async Task WriteAsync(ReadOnlyMemory<char> toWrite, CancellationToken token)
     {
+        // Plugin.LogError("Sending Message: "+new string(toWrite.ToArray()));
         await _streamWriter.WriteAsync(toWrite, token);
         // ReSharper disable once MethodHasAsyncOverload
         _streamWriter.Flush();
@@ -424,6 +455,7 @@ public static class SocketManager
                         _expectedCommand = ServerCommand.SplitIntro + i;
                         break;
                     }
+
                     break;
             }
         }

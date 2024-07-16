@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -23,6 +22,7 @@ public class Plugin : BaseUnityPlugin
 
     private ConfigEntry<bool> _enableTeleport, _enableFly, _enableQuickSave, _enableRecording;
     private ConfigEntry<bool> _saveRestarts, _saveWins;
+    private ConfigEntry<bool> _safeQuickLoad;
     private ConfigEntry<KeyCode> _quickSave, _quickLoad;
     private ConfigEntry<KeyCode>[] _fly;
     private ConfigEntry<KeyboardShortcut>[] _teleport;
@@ -112,6 +112,13 @@ public class Plugin : BaseUnityPlugin
             "QuickLoad",
             KeyCode.F,
             "Loads the previously quicksaved position"
+        );
+
+        _safeQuickLoad = Config.Bind(
+            "_Toggles",
+            "SafeQuickLoad",
+            true,
+            "Respawns you before teleporting"
         );
 
         _saveWins = Config.Bind(
@@ -429,6 +436,15 @@ public class Plugin : BaseUnityPlugin
         if (mainCamera != null && _quickSaveData.CameraPosition != Vector3.zero)
         {
             mainCamera.transform.position = _quickSaveData.CameraPosition;
+        }
+
+        if (_safeQuickLoad.Value)
+        {
+            var playerSpawn = FindObjectOfType<PlayerSpawn>();
+            playerSpawn.Respawn(_quickSaveData.TransformPositions[0]);
+            var newPlayer = Traverse.Create(playerSpawn).Field("p").GetValue<GameObject>();
+            var newClimberMain = newPlayer.GetComponent<ClimberMain>();
+            Initialize(newClimberMain);
         }
 
         for (var i = 0; i < _playerTransforms.Length; i++)

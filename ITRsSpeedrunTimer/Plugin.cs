@@ -39,7 +39,8 @@ public class Plugin : BaseUnityPlugin
     private ConfigEntry<string>[] _splitNames;
     public static string[] SplitNames { get; private set; }
 
-    private int _waitToUpdateTimer = 0;
+    private float _waitToUpdateTimer = 0;
+    private int _skipMode = 2;
 
     private void Awake()
     {
@@ -162,6 +163,7 @@ public class Plugin : BaseUnityPlugin
         );
 
         _currentPhase = ServerCommand.StartTimer;
+        _skipMode = 2;
     }
 
     private void FixedUpdate()
@@ -187,107 +189,82 @@ public class Plugin : BaseUnityPlugin
         }
 
         var splitPos = _body.transform.position;
-        var grabSplit = _useGrabSplits.Value;
 
         var time = Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime;
-        switch (_currentPhase)
+        if (y < 15)
         {
-            case ServerCommand.StartTimer:
-                if (anyGrabbing)
-                {
-                    if (!UseInGameTime)
-                    {
-                        SocketManager.Command(ServerCommand.StartTimer, time);
-                    }
-
-                    _currentPhase = ServerCommand.SplitIntro;
-                    break;
-                }
-
-                goto case ServerCommand.SplitIntro;
-            case ServerCommand.SplitIntro:
-                var split = grabSplit ? highestGrabbedY > 33 : splitPos is { y: > 31 };
-                if (split)
-                {
-                    SocketManager.Command(ServerCommand.SplitIntro, time);
-                    _currentPhase = ServerCommand.SplitJungle;
-                    break;
-                }
-
-                goto case ServerCommand.SplitJungle;
-            case ServerCommand.SplitJungle:
-                split = grabSplit ? highestGrabbedY > 60 : splitPos is { y: > 55, x: < 0 };
-                if (split)
-                {
-                    SocketManager.Command(ServerCommand.SplitJungle, time);
-                    _currentPhase = ServerCommand.SplitGears;
-                    break;
-                }
-
-                goto case ServerCommand.SplitGears;
-            case ServerCommand.SplitGears:
-                split = grabSplit ? inWater && y > 83 : splitPos is { y: > 80f and < 87, x: > 8f };
-                if (split)
-                {
-                    SocketManager.Command(ServerCommand.SplitGears, time);
-                    _currentPhase = ServerCommand.SplitPool;
-                    break;
-                }
-
-                goto case ServerCommand.SplitPool;
-            case ServerCommand.SplitPool:
-                split = grabSplit ? highestGrabbedY > 112 : splitPos is { y: > 109, x: < 20 };
-                if (split)
-                {
-                    SocketManager.Command(ServerCommand.SplitPool, time);
-                    _currentPhase = ServerCommand.SplitConstruction;
-                    break;
-                }
-
-                goto case ServerCommand.SplitConstruction;
-            case ServerCommand.SplitConstruction:
-                split = grabSplit ? highestGrabbedY > 137 : splitPos is { y: > 135 };
-                if (split)
-                {
-                    SocketManager.Command(ServerCommand.SplitConstruction, time);
-                    _currentPhase = ServerCommand.SplitCave;
-                    break;
-                }
-
-                goto case ServerCommand.SplitCave;
-            case ServerCommand.SplitCave:
-                split = grabSplit ? highestGrabbedY > 154 : splitPos is { y: > 152 };
-                if (split)
-                {
-                    SocketManager.Command(ServerCommand.SplitCave, time);
-                    _currentPhase = ServerCommand.SplitIce;
-                    break;
-                }
-
-                goto case ServerCommand.SplitIce;
-            case ServerCommand.SplitIce:
-                split = grabSplit ? highestGrabbedY > 207 : splitPos is { y: > 204, x: < 47 };
-                if (split)
-                {
-                    SocketManager.Command(ServerCommand.SplitIce, time);
-                    _currentPhase = ServerCommand.SplitFinal;
-                    break;
-                }
-
-                goto case ServerCommand.SplitFinal;
-            case ServerCommand.SplitFinal:
-                if (y > 240 && inWater && !anyGrabbing)
-                {
-                    if (!UseInGameTime)
-                    {
-                        SocketManager.Command(ServerCommand.SplitFinal, time);
-                    }
-
-                    _currentPhase = ServerCommand.Reset;
-                }
-
-                break;
+            _skipMode = 0;
         }
+
+        var grabSplit = _useGrabSplits.Value && _skipMode <= 0;
+
+        if (y > 240 && inWater && !anyGrabbing && _currentPhase < ServerCommand.Reset)
+        {
+            if (!UseInGameTime)
+            {
+                SocketManager.Command(ServerCommand.SplitFinal, time, _skipMode-- > 0);
+            }
+
+            _currentPhase = ServerCommand.Reset;
+        }
+        else if (grabSplit
+                     ? highestGrabbedY > 207
+                     : splitPos is { y: > 204, x: < 47 } && _currentPhase < ServerCommand.SplitFinal)
+        {
+            SocketManager.Command(ServerCommand.SplitIce, time, _skipMode-- > 0);
+            _currentPhase = ServerCommand.SplitFinal;
+        }
+        else if (grabSplit ? highestGrabbedY > 154 : splitPos is { y: > 152 } && _currentPhase < ServerCommand.SplitIce)
+        {
+            SocketManager.Command(ServerCommand.SplitCave, time, _skipMode-- > 0);
+            _currentPhase = ServerCommand.SplitIce;
+        }
+        else if (grabSplit
+                     ? highestGrabbedY > 137
+                     : splitPos is { y: > 135 } && _currentPhase < ServerCommand.SplitCave)
+        {
+            SocketManager.Command(ServerCommand.SplitConstruction, time, _skipMode-- > 0);
+            _currentPhase = ServerCommand.SplitCave;
+        }
+        else if (grabSplit
+                     ? highestGrabbedY > 112
+                     : splitPos is { y: > 109, x: < 20 } && _currentPhase < ServerCommand.SplitConstruction)
+        {
+            SocketManager.Command(ServerCommand.SplitPool, time, _skipMode-- > 0);
+            _currentPhase = ServerCommand.SplitConstruction;
+        }
+        else if (grabSplit
+                     ? inWater && y > 83
+                     : splitPos is { y: > 80f and < 87, x: > 8f } && _currentPhase < ServerCommand.SplitPool)
+        {
+            SocketManager.Command(ServerCommand.SplitGears, time, _skipMode-- > 0);
+            _currentPhase = ServerCommand.SplitPool;
+        }
+        else if (grabSplit
+                     ? highestGrabbedY > 60
+                     : splitPos is { y: > 55, x: < 0 } && _currentPhase < ServerCommand.SplitGears)
+        {
+            SocketManager.Command(ServerCommand.SplitJungle, time, _skipMode-- > 0);
+            _currentPhase = ServerCommand.SplitGears;
+        }
+        else if (grabSplit
+                     ? highestGrabbedY > 33
+                     : splitPos is { y: > 31 } && _currentPhase < ServerCommand.SplitJungle && (_skipMode <= 0 || splitPos.x > 0))
+        {
+            SocketManager.Command(ServerCommand.SplitIntro, time, _skipMode-- > 0);
+            _currentPhase = ServerCommand.SplitJungle;
+        }
+        else if (anyGrabbing && _currentPhase < ServerCommand.SplitIntro)
+        {
+            if (!UseInGameTime)
+            {
+                SocketManager.Command(ServerCommand.StartTimer, time, _skipMode-- > 0);
+            }
+
+            _currentPhase = ServerCommand.SplitIntro;
+        }
+        else
+            return;
     }
 
     private void Update()
@@ -298,9 +275,9 @@ public class Plugin : BaseUnityPlugin
         }
 
         _errorTimer -= Time.unscaledDeltaTime;
+        _waitToUpdateTimer -= Time.unscaledDeltaTime;
 
-
-        if (_waitToUpdateTimer-- <= 0)
+        if (_waitToUpdateTimer <= 0)
         {
             _waitToUpdateTimer += 10;
             // Reset phase means we've won
