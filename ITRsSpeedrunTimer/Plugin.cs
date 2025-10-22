@@ -37,13 +37,17 @@ public class Plugin : BaseUnityPlugin
     private string _errorString;
     private float _errorTimer;
 
-    private ConfigEntry<bool> _useServer, _useInGameTime, _showModList, _useGrabSplits;
+    private ConfigEntry<bool> _useLiveSplit, _useInGameTime, _showModList, _useGrabSplits;
     private ConfigEntry<int> _threadSleepTime;
     private ConfigEntry<string>[] _splitNames;
     public static string[] SplitNames { get; private set; }
 
     private float _waitToUpdateTimer = 0;
     private int _skipMode = 2;
+    private float _timeSinceSpawning = 0f;
+
+    private bool wasSkippingLastFrame;
+    private float _skipTime;
 
     private void Awake()
     {
@@ -51,11 +55,11 @@ public class Plugin : BaseUnityPlugin
         UseInGameTime = true;
 
 
-        _useServer = Config.Bind(
+        _useLiveSplit = Config.Bind(
             "_Toggles",
-            "Use Server",
+            "Connect To Livesplit",
             true,
-            "Makes the game connect to the LiveSplit Server and automatically handle splits & start/end"
+            "Makes the game connect to the LiveSplit and automatically handle splits & start/end"
         );
         _useInGameTime = Config.Bind(
             "_Toggles",
@@ -95,8 +99,8 @@ public class Plugin : BaseUnityPlugin
             _splitNames[i].SettingChanged += (_, _) => { SplitNames[index] = _splitNames[index].Value; };
         }
 
-        UseServer = _useServer.Value;
-        _useServer.SettingChanged += (_, _) => UseServer = _useServer.Value;
+        UseServer = _useLiveSplit.Value;
+        _useLiveSplit.SettingChanged += (_, _) => UseServer = _useLiveSplit.Value;
         UseInGameTime = _useInGameTime.Value;
         _useInGameTime.SettingChanged += (_, _) => UseInGameTime = _useInGameTime.Value;
 
@@ -133,13 +137,13 @@ public class Plugin : BaseUnityPlugin
         ClimberMainPatch.OnClimberSpawned += OnClimberSpawned;
         SaveSystemJTimePatch.OnGameWon += timeCompleted =>
         {
-            if (!UseInGameTime || !_useServer.Value) return;
+            if (!UseInGameTime || !_useLiveSplit.Value) return;
             SocketManager.Command(ServerCommand.SplitFinal, timeCompleted);
         };
 
         PauseMenuPatch.OnPause += (paused) =>
         {
-            if (!UseInGameTime || !_useServer.Value) return;
+            if (!UseInGameTime || !_useLiveSplit.Value) return;
             SocketManager.Command(
                 paused ? ServerCommand.Pause : ServerCommand.Unpause,
                 Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime
@@ -148,11 +152,15 @@ public class Plugin : BaseUnityPlugin
 
         PauseMenuPatch.OnStartTimer += () =>
         {
-            if (!UseInGameTime || !_useServer.Value) return;
+            if (!UseInGameTime || !_useLiveSplit.Value) return;
             SocketManager.Command(
                 ServerCommand.StartTimer,
                 Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime
             );
+            if (_currentPhase == ServerCommand.StartTimer)
+            {
+                _currentPhase = ServerCommand.SplitIntro;
+            }
         };
 
         SocketManager.Start();
@@ -177,11 +185,17 @@ public class Plugin : BaseUnityPlugin
 
         _currentPhase = ServerCommand.StartTimer;
         _skipMode = 2;
+        _timeSinceSpawning = 0f;
+        
+
+        wasSkippingLastFrame = true;
+        _skipTime = 0;
     }
 
     private void FixedUpdate()
     {
-        if (!_useServer.Value || _body == null) return;
+        _timeSinceSpawning += Time.fixedDeltaTime;
+        if (!_useLiveSplit.Value || _body == null) return;
 
         var y = _body.transform.position.y;
         var inWater = _body.isInWater;
@@ -207,7 +221,22 @@ public class Plugin : BaseUnityPlugin
         if (y < 15)
         {
             _skipMode = 0;
+            wasSkippingLastFrame = false;
+            _skipTime = 0;
         }
+        else if (_skipMode > 0)
+        {
+            wasSkippingLastFrame = true;
+            time = 0;
+            _skipTime = 0;
+        }
+        else if (wasSkippingLastFrame)
+        {
+            wasSkippingLastFrame = false;
+            _skipTime = time;
+        }
+
+        time -= _skipTime;
 
         var grabSplit = _useGrabSplits.Value && _skipMode <= 0;
 
@@ -222,7 +251,7 @@ public class Plugin : BaseUnityPlugin
         }
         else if ((grabSplit
                      ? highestGrabbedY > 207
-                     : splitPos is { y: > 204, x: < 47 }) &&
+                     : splitPos is { y: > 204, x: < 47 } or { y: > 208 }) &&
                  _currentPhase < ServerCommand.SplitFinal)
         {
             SocketManager.Command(ServerCommand.SplitIce, time, _skipMode-- > 0);
@@ -244,7 +273,7 @@ public class Plugin : BaseUnityPlugin
         }
         else if ((grabSplit
                      ? highestGrabbedY > 112
-                     : splitPos is { y: > 109, x: < 20 }) &&
+                     : splitPos is { y: > 109, x: < 20 } or { y: > 120f }) &&
                  _currentPhase < ServerCommand.SplitConstruction)
         {
             SocketManager.Command(ServerCommand.SplitPool, time, _skipMode-- > 0);
@@ -252,7 +281,7 @@ public class Plugin : BaseUnityPlugin
         }
         else if ((grabSplit
                      ? inWater && y > 83
-                     : splitPos is { y: > 80f and < 87, x: > 8f }) &&
+                     : splitPos is { y: > 80f and < 87, x: > 8f } or { y: >= 87, x: >= 20f }) &&
                  _currentPhase < ServerCommand.SplitPool)
         {
             SocketManager.Command(ServerCommand.SplitGears, time, _skipMode-- > 0);
@@ -270,31 +299,27 @@ public class Plugin : BaseUnityPlugin
                      ? highestGrabbedY > 33
                      : splitPos is { y: > 31 }) &&
                  _currentPhase < ServerCommand.SplitJungle &&
-                 (_skipMode <= 0 || splitPos.x > 0))
+                 (_skipMode > 0 || splitPos.x > 0))
         {
             SocketManager.Command(ServerCommand.SplitIntro, time, _skipMode-- > 0);
             _currentPhase = ServerCommand.SplitJungle;
         }
-        else if (anyGrabbing && _currentPhase < ServerCommand.SplitIntro)
+        else if (anyGrabbing && _currentPhase < ServerCommand.SplitIntro && !UseInGameTime)
         {
-            if (!UseInGameTime)
-            {
-                SocketManager.Command(ServerCommand.StartTimer, time, _skipMode-- > 0);
-            }
-
+            SocketManager.Command(ServerCommand.StartTimer, time, _skipMode-- > 0);
             _currentPhase = ServerCommand.SplitIntro;
         }
-        else
-            return;
+        else if (_currentPhase < ServerCommand.SplitIntro && _timeSinceSpawning >= 0.1f && splitPos.y >= 15)
+        {
+            SocketManager.Command(ServerCommand.StartTimer, time, _skipMode-- > 0);
+            _currentPhase = ServerCommand.SplitIntro;
+        }
+
+        return;
     }
 
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.U))
-        {
-            SocketManager.Command(ServerCommand.StartTimer, 0);
-        }
-
         _errorTimer -= Time.unscaledDeltaTime;
         _waitToUpdateTimer -= Time.unscaledDeltaTime;
 
@@ -305,7 +330,7 @@ public class Plugin : BaseUnityPlugin
             if (_currentPhase != ServerCommand.Reset)
             {
                 SocketManager.SyncTime =
-                    Mathf.Round((Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime) * 1000) / 1000;
+                    Mathf.Round((Time.time + SaveSystemJ.timeFromSave - SaveSystemJ.startTime) * 1000) / 1000 - _skipTime;
             }
         }
 

@@ -172,7 +172,7 @@ public static class SocketManager
                 if (token.IsCancellationRequested) return;
                 _stream.ReadMode = PipeTransmissionMode.Byte;
 
-                await _stream.WriteAsync("getcurrenttimerphas\ngetcurrentsplitname"u8.ToArray(), token);
+                await _stream.WriteAsync("getcurrenttimerphase\ngetcurrentsplitname"u8.ToArray(), token);
 
                 _streamWriter = new StreamWriter(_stream, Encoding.UTF8, 1024, true);
                 _streamReader = new StreamReader(_stream, Encoding.UTF8, false, 1024, true);
@@ -239,6 +239,7 @@ public static class SocketManager
             switch (command)
             {
                 case ServerCommand.StartTimer:
+                    Plugin.Log($"{_expectedCommand} -> {command}   {skip}  START");
                     await RunSplit(ServerCommand.StartTimer, 0, token);
                     break;
                 case ServerCommand.Reset:
@@ -265,21 +266,21 @@ public static class SocketManager
                     {
                         if (_expectedCommand == ServerCommand.StartTimer)
                         {
-                            await RunSplit(ServerCommand.StartTimer, 0, token);
+                            await WriteAsync(StartTimerMessage, token);
                             _expectedCommand++;
                         }
 
                         if (Plugin.UseInGameTime)
                         {
                             var text = time.ToString(CultureInfo.InvariantCulture);
-                            SplitWithTimeMessage[^2] = text;
+                            SetTimerMessage[^2] = text;
                             await WriteAsync(
-                                new ReadOnlyMemory<char>(string.Join("", SplitWithTimeMessage).ToCharArray()),
+                                new ReadOnlyMemory<char>(string.Join("", SetTimerMessage).ToCharArray()),
                                 token
                             );
                         }
 
-                        while (_expectedCommand < command)
+                        while (_expectedCommand <= command)
                         {
                             await RunSkip(token);
                         }
